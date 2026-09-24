@@ -1,0 +1,105 @@
+# Rime dictionary — 常用简体优先，权重高于词库默认
+---
+name: hr_terms
+version: "1.2"
+sort: by_weight
+...
+的	de	999999
+了	le	900000
+我	wo	900000
+是	shi	900000
+在	zai	900000
+你	ni	900000
+不	bu	800000
+有	you	800000
+个	ge	800000
+好	hao	800000
+人	ren	800000
+这	zhe	700000
+他	ta	700000
+她	ta	700000
+们	men	700000
+来	lai	600000
+去	qu	600000
+说	shuo	600000
+要	yao	600000
+会	hui	600000
+能	neng	600000
+就	jiu	600000
+都	dou	600000
+和	he	600000
+吗	ma	500000
+呢	ne	500000
+吧	ba	500000
+啊	a	500000
+你好	ni hao	999999
+您好	nin hao	900000
+请问	qing wen	800000
+谢谢	xie xie	800000
+不客气	bu ke qi	700000
+再见	zai jian	700000
+对不起	dui bu qi	700000
+没关系	mei guan xi	700000
+是的	shi de	600000
+不是	bu shi	600000
+可以	ke yi	600000
+怎么	zen me	600000
+什么	shen me	600000
+哪里	na li	600000
+多少	duo shao	600000
+为什么	wei shen me	600000
+怎么样	zen me yang	600000
+今天	jin tian	500000
+明天	ming tian	500000
+现在	xian zai	500000
+电话	dian hua	500000
+姓名	xing ming	500000
+地址	di zhi	500000
+我的	wo de	500000
+查询	cha xun	500000
+办理	ban li	500000
+请	qing	400000
+帮我	bang wo	400000
+我想	wo xiang	400000
+我要	wo yao	400000
+一个	yi ge	400000
+这个	zhe ge	400000
+那个	na ge	400000
+就是	jiu shi	400000
+但是	dan shi	400000
+所以	suo yi	400000
+因为	yin wei	400000
+如果	ru guo	400000
+还是	hai shi	400000
+没有	mei you	400000
+知道	zhi dao	400000
+需要	xu yao	400000
+工作	gong zuo	400000
+简历	jian li	400000
+社保	she bao	200000
+社保查询	she bao cha xun	200000
+社保缴纳	she bao jiao na	180000
+社保明细	she bao ming xi	180000
+养老保险	yang lao bao xian	180000
+养老金	yang lao jin	180000
+养老金领取	yang lao jin ling qu	180000
+医疗保险	yi liao bao xian	160000
+失业保险	shi ye bao xian	160000
+工伤保险	gong shang bao xian	160000
+生育保险	sheng yu bao xian	150000
+就业登记	jiu ye deng ji	180000
+就业推荐	jiu ye tui jian	160000
+劳动关系	lao dong guan xi	180000
+劳动仲裁	lao dong zhong cai	180000
+劳动合同	lao dong he tong	160000
+培训报名	pei xun bao ming	150000
+人才服务	ren cai fu wu	150000
+岗位比对	gang wei bi dui	180000
+岗位胜任力	gang wei sheng ren li	180000
+简历生成	jian li sheng cheng	180000
+工作经验	gong zuo jing yan	160000
+如何查询社保	ru he cha xun she bao	200000
+如何办理就业登记	ru he ban li jiu ye deng ji	180000
+我想查询社保	wo xiang cha xun she bao	200000
+我要办理	wo yao ban li	180000
+帮我查询	bang wo cha xun	180000

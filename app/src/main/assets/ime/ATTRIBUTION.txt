@@ -1,0 +1,11 @@
+拼音词库来源 / Dictionary attribution
+
+1) 雾凇拼音 rime-ice（输入主引擎）
+   https://github.com/iDvel/rime-ice
+   Files used: cn_dicts/8105.dict.yaml, cn_dicts/base.dict.yaml
+   Upstream aggregates open corpora (THUOCL, community dicts, etc.).
+
+2) Domain boost phrases for HR/resume robot app (project local).
+
+Vendor cache: scripts/vendor/
+Rebuild: python scripts/build_open_pinyin_dict.py

@@ -1,0 +1,10 @@
+# Rime dictionary
+---
+name: hr_pinyin
+version: "1.2"
+sort: by_weight
+use_preset_vocabulary: true
+import_tables:
+  - luna_pinyin
+  - hr_terms
+...
