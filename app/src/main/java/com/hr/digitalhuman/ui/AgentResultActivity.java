@@ -160,7 +160,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollLp.topMargin = dp(10);
         root.addView(scroll, scrollLp);
-        latest = button("回到最新");
+        latest = button("回到底部");
         root.addView(latest, new LinearLayout.LayoutParams(-1, -2));
         scroll.setFollowListener(following -> latest.setVisibility(following ? View.GONE : View.VISIBLE));
         latest.setOnClickListener(v -> scroll.returnToLatest());

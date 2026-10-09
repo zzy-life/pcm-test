@@ -54,16 +54,19 @@ public final class UiDecor {
         android.content.Context themed = new androidx.appcompat.view.ContextThemeWrapper(
                 ctx, primary ? R.style.BtnPrimary : R.style.BtnSecondary);
         androidx.appcompat.widget.AppCompatButton button =
-                new androidx.appcompat.widget.AppCompatButton(themed, null, 0);
+                new androidx.appcompat.widget.AppCompatButton(themed, null, 0) {
+                    @Override public void setEnabled(boolean enabled) {
+                        super.setEnabled(enabled);
+                        // 与首页一致：文字和背景整体变淡，恢复时还原透明度。
+                        setAlpha(enabled ? 1f : 0.35f);
+                    }
+                };
         button.setSupportBackgroundTintList(null);
         button.setText(text);
         button.setAllCaps(false);
+        button.setGravity(android.view.Gravity.CENTER);
         button.setMinimumHeight(dp(ctx, 48));
-        // 禁用态保持与后台任务状态一致，不能看起来仍可点击。
-        button.setTextColor(new android.content.res.ColorStateList(
-                new int[][]{new int[]{-android.R.attr.state_enabled}, new int[]{}},
-                new int[]{color(ctx, R.color.text_dim),
-                        color(ctx, primary ? R.color.white : R.color.text)}));
+        button.setTextColor(color(ctx, primary ? R.color.white : R.color.text));
         return button;
     }
 
