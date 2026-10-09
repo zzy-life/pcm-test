@@ -34,7 +34,7 @@ public final class AgentDefinition {
                 : BuildConfig.AGENTS_RESUME_DIAGNOSIS_API_KEY;
     }
 
-    /** 简历文本与文件严格互斥；调用方只传已上传的 cos_key，不传下载凭据。 */
+    /** 简历文本与文件严格互斥；文件可传已上传 cos_key 或已确认支持的公网 URL，不传下载凭据。 */
     public JsonObject buildRequest(String type, String jobInfo, String jobTitle,
                                    String resumeContent, String cosKey) {
         String resume = clean(resumeContent);

@@ -24,6 +24,15 @@ import androidx.appcompat.app.AppCompatActivity;
 import com.hr.digitalhuman.R;
 import com.hr.digitalhuman.agents.AgentApiClient;
 import com.hr.digitalhuman.agents.AgentDefinition;
+import com.google.gson.JsonObject;
+
+import java.io.InputStream;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.util.Locale;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 
 
 /** 独立原生页面：不依赖机器人连接，所有网络操作在后台执行。 */
@@ -32,21 +41,27 @@ public class AgentStreamActivity extends AppCompatActivity {
     public static final String EXTRA_JOB_INFO = "job_info";
     public static final String EXTRA_JOB_TITLE = "job_title";
     public static final String EXTRA_RESUME_CONTENT = "resume_content";
-    public static final String EXTRA_COS_KEY = "cos_key";
+    public static final String EXTRA_FILE_URL = "file_url";
     public static final String EXTRA_DOWNLOAD_TOKEN = "download_token";
     public static final String EXTRA_RESUME_NAME = "resume_name";
     public static final String EXTRA_RECORD_ID = "record_id";
     private static final int PICK_FILE = 6101;
     private static final int MAX_INPUT_CHARS = 50000;
     private boolean invalidParameters;
-    private static final int TEXT = 0, LOCAL = 1, COS = 2, HISTORY = 3;
+    private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2, HISTORY = 3;
     private static final String SAMPLE_JD = "【虚构示例 JD，请替换】招聘 Java 后端工程师，负责业务接口开发与数据库优化，要求熟悉 Java、SQL 和团队协作。";
     private static final String SAMPLE_RESUME = "【虚构示例简历，请替换】示例候选人：3 年 Java 后端开发经验，参与订单系统接口开发、SQL 优化及自动化测试。以上经历均为虚构。";
 
     private Spinner agent, source, careerType;
-    private EditText jd, jobTitle, resume, cosKey;
+    private EditText jd, jobTitle, resume, fileUrl;
     private TextView status, fileInfo, agentHint;
-    private Button begin, choose;
+    private Button begin, choose, cancel;
+    private final ExecutorService preparationExecutor = Executors.newCachedThreadPool();
+    private Future<?> preparationTask;
+    private AgentApiClient preparationClient;
+    // 仅主线程读写；每次取消先递增，已排队的成功/失败回调也会失效。
+    private long generation;
+    private boolean preparing;
     private Uri fileUri;
     private String filename = "resume", mime = "application/octet-stream";
     private String downloadToken = "", resumeName = "";
@@ -131,9 +146,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         jobTitle = editor(settings, "职位标题（可选，不等于 JD）", 1);
         jd = editor(settings, "职位 JD（简历诊断必填）", 4);
         label(inputs, "简历来源（只发送所选来源）");
-        source = spinner(inputs, "编辑简历文本", "本地文件", "已有 cos_key", "历史简历下载凭据");
+        source = spinner(inputs, "编辑简历文本", "本地文件", "公网URL文件", "历史简历下载凭据");
         resume = editor(inputs, "简历正文", 5);
-        cosKey = editor(inputs, "已上传文件的 cos_key（不是 URL 或 token）", 2);
+        fileUrl = editor(inputs, "公网文件完整 URL（http/https，不是下载 token）", 2);
         choose = button("选择本地文件（最多 50MB）");
         inputs.addView(choose, UiDecor.cardLp(this, 8));
         choose.setOnClickListener(v -> openDocument());
@@ -144,6 +159,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         beginLp.topMargin = dp(12);
         inputs.addView(begin, beginLp);
         begin.setOnClickListener(v -> startRequest());
+        cancel = button("取消准备");
+        inputs.addView(cancel, UiDecor.cardLp(this, 8));
+        cancel.setOnClickListener(v -> {
+            cancelPreparation();
+            status.setText("已取消准备，可修改资料后重新开始。");
+        });
         status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示 Markdown 分析结果。");
         inputs.addView(status);
         setContentView(root);
@@ -157,7 +178,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             invalidParameters = true;
             status.setText("不支持的智能体 ID，请返回并传入 career 或 resume_diagnosis。");
         }
-        for (String name : new String[]{EXTRA_RESUME_CONTENT, EXTRA_JOB_INFO, EXTRA_JOB_TITLE, EXTRA_COS_KEY}) {
+        for (String name : new String[]{EXTRA_RESUME_CONTENT, EXTRA_JOB_INFO, EXTRA_JOB_TITLE, EXTRA_FILE_URL}) {
             String value = i.getStringExtra(name);
             if (value != null && value.length() > MAX_INPUT_CHARS) {
                 invalidParameters = true;
@@ -169,7 +190,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         resumeName = text(i.getStringExtra(EXTRA_RESUME_NAME));
         if (i.hasExtra(EXTRA_RECORD_ID)) recordId = i.getLongExtra(EXTRA_RECORD_ID, 0);
         // 只有完全没有真实资料/记录参数时才提供虚构示例。
-        boolean real = i.hasExtra(EXTRA_RESUME_CONTENT) || i.hasExtra(EXTRA_COS_KEY)
+        boolean real = i.hasExtra(EXTRA_RESUME_CONTENT) || i.hasExtra(EXTRA_FILE_URL)
                 || i.hasExtra(EXTRA_DOWNLOAD_TOKEN) || i.hasExtra(EXTRA_RECORD_ID)
                 || i.hasExtra(EXTRA_RESUME_NAME) || i.hasExtra(EXTRA_JOB_TITLE)
                 || i.hasExtra(EXTRA_JOB_INFO);
@@ -178,15 +199,17 @@ public class AgentStreamActivity extends AppCompatActivity {
         jd.setText(i.hasExtra(EXTRA_JOB_INFO)
                 ? text(i.getStringExtra(EXTRA_JOB_INFO)) : (real ? "" : SAMPLE_JD));
         jobTitle.setText(text(i.getStringExtra(EXTRA_JOB_TITLE)));
-        cosKey.setText(text(i.getStringExtra(EXTRA_COS_KEY)));
-        // 冲突规则固定且可见：正文 > cos_key > 历史 token；仍允许用户手动切换。
+        String suppliedUrl = i.getStringExtra(EXTRA_FILE_URL);
+        // 不 trim URL，保留控制字符供开始时校验拒绝，不悄悄修正非法地址。
+        fileUrl.setText(suppliedUrl == null ? "" : suppliedUrl);
+        // 冲突规则固定且可见：正文 > file_url > 历史 token；仍允许用户手动切换。
         if (!resume.getText().toString().trim().isEmpty()) source.setSelection(TEXT);
-        else if (!cosKey.getText().toString().trim().isEmpty()) source.setSelection(COS);
+        else if (!fileUrl.getText().toString().trim().isEmpty()) source.setSelection(URL_FILE);
         else if (!downloadToken.isEmpty()) source.setSelection(HISTORY);
-        if ((i.hasExtra(EXTRA_RESUME_CONTENT) && i.hasExtra(EXTRA_COS_KEY))
+        if ((i.hasExtra(EXTRA_RESUME_CONTENT) && i.hasExtra(EXTRA_FILE_URL))
                 || (i.hasExtra(EXTRA_DOWNLOAD_TOKEN) && (i.hasExtra(EXTRA_RESUME_CONTENT)
-                || i.hasExtra(EXTRA_COS_KEY)))) {
-            status.setText("多种资料参数：优先正文，其次 cos_key，最后历史凭据；只发送当前所选来源。");
+                || i.hasExtra(EXTRA_FILE_URL)))) {
+            status.setText("多种资料参数：优先正文，其次 file_url，最后历史凭据；只发送当前所选来源。");
         }
     }
 
@@ -197,7 +220,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         AdapterView.OnItemSelectedListener listener = new AdapterView.OnItemSelectedListener() {
             @Override public void onItemSelected(AdapterView<?> parent, View view, int p, long id) {
                 if (initializing) return;
-                // 忽略首次布局及相同选项回调，避免清除旋转恢复的上传缓存。
+                // 忽略首次布局及相同选项回调，保留旋转恢复后的来源选择。
                 if (parent == source) {
                     if (p == lastSource) return;
                     lastSource = p;
@@ -228,7 +251,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     private void updateSource() {
         int mode = source.getSelectedItemPosition();
         resume.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
-        cosKey.setVisibility(mode == COS ? View.VISIBLE : View.GONE);
+        fileUrl.setVisibility(mode == URL_FILE ? View.VISIBLE : View.GONE);
         choose.setVisibility(mode == LOCAL ? View.VISIBLE : View.GONE);
         if (mode == LOCAL) fileInfo.setText(fileUri == null ? "尚未选择本地文件" : "本地文件：" + filename);
         else if (mode == HISTORY) fileInfo.setText(downloadToken.isEmpty()
@@ -236,7 +259,7 @@ public class AgentStreamActivity extends AppCompatActivity {
                 : "真实历史简历：" + (resumeName.isEmpty() ? "未命名" : resumeName)
                 + (recordId == null ? "" : "（记录 " + recordId + "）")
                 + "；开始后下载 PDF 并上传，不以虚构简历替代。");
-        else if (mode == COS) fileInfo.setText("仅接受已上传的 cos_key；不要填写下载 token 或公网 URL。");
+        else if (mode == URL_FILE) fileInfo.setText("使用可公开访问的 http/https 完整文件 URL；不接受本机、私网或下载 token。");
         else fileInfo.setText("编辑正文；含“虚构示例”的内容仅用于演示，请替换为实际简历。");
     }
 
@@ -251,7 +274,8 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
-        if (requestCode != PICK_FILE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
+        if (preparing || isFinishing() || isDestroyed() || requestCode != PICK_FILE
+                || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         fileUri = data.getData();
         filename = "resume";
         mime = "application/octet-stream";
@@ -274,7 +298,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void startRequest() {
-        if (invalidParameters) return;
+        if (invalidParameters || preparing || isFinishing() || isDestroyed()) return;
         AgentDefinition definition = agent.getSelectedItemPosition() == 0
                 ? AgentDefinition.CAREER_AGENT : AgentDefinition.DIAGNOSIS_AGENT;
         String key = definition.apiKey();
@@ -288,43 +312,194 @@ public class AgentStreamActivity extends AppCompatActivity {
         final String jdText = jd.getText().toString();
         final String titleText = jobTitle.getText().toString();
         final String planningType = careerType.getSelectedItem().toString();
-        final String explicitKey = cosKey.getText().toString().trim();
+        final String explicitUrl = fileUrl.getText().toString();
         if (definition == AgentDefinition.DIAGNOSIS_AGENT && jdText.trim().isEmpty()) {
             status.setText("请补充真实职位 JD，职位标题不能替代 JD。"); return;
         }
         if ((mode == TEXT && resumeText.trim().isEmpty()) || (mode == LOCAL && fileUri == null)
-                || (mode == COS && explicitKey.isEmpty()) || (mode == HISTORY && downloadToken.isEmpty())) {
+                || (mode == URL_FILE && explicitUrl.isEmpty()) || (mode == HISTORY && downloadToken.isEmpty())) {
             status.setText("当前来源没有可用简历，请补充资料或切换来源。"); return;
         }
-        if (mode == COS && (explicitKey.contains("://") || explicitKey.equals(downloadToken))) {
-            status.setText("请输入已上传的 cos_key，不要使用 URL 或历史下载 token。"); return;
+        if (mode == URL_FILE && !isPublicFileUrl(explicitUrl)) {
+            status.setText("请输入合法的公网 http/https 完整文件 URL，不含账号密码、控制字符或本机/私网地址。");
+            return;
         }
-        try { new AgentApiClient(key); }
-        catch (IllegalArgumentException e) { status.setText("密钥配置无效，请检查 " + definition.configurationName); return; }
-        Intent intent = new Intent(this, AgentResultActivity.class);
-        intent.putExtra(EXTRA_AGENT_ID, definition.id);
-        intent.putExtra(EXTRA_JOB_INFO, jdText);
-        intent.putExtra(EXTRA_JOB_TITLE, titleText);
-        intent.putExtra(EXTRA_RESUME_CONTENT, mode == TEXT ? resumeText : "");
-        intent.putExtra(EXTRA_COS_KEY, mode == COS ? explicitKey : "");
-        intent.putExtra(EXTRA_DOWNLOAD_TOKEN, mode == HISTORY ? downloadToken : "");
-        intent.putExtra(EXTRA_RESUME_NAME, resumeName);
-        intent.putExtra(AgentResultActivity.EXTRA_SOURCE, mode);
-        intent.putExtra(AgentResultActivity.EXTRA_TYPE, planningType);
-        if (mode == LOCAL) {
-            intent.setData(fileUri);
-            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
-            intent.putExtra(AgentResultActivity.EXTRA_FILE_NAME, filename);
-            intent.putExtra(AgentResultActivity.EXTRA_MIME, mime);
+        final AgentApiClient client;
+        try { client = new AgentApiClient(key); }
+        catch (IllegalArgumentException e) {
+            status.setText("密钥配置无效，请检查 " + definition.configurationName); return;
         }
-        startActivity(intent);
+        // 冻结全部选择参数，工作线程不读取任何控件或可变的文件/历史记录字段。
+        final Uri selectedUri = fileUri;
+        final String selectedName = filename, selectedMime = mime, selectedToken = downloadToken;
+        final String summary = initialSummary(definition, planningType, titleText, mode,
+                resumeText, mode == LOCAL ? selectedName : resumeName);
+        if (mode == TEXT || mode == URL_FILE) {
+            try {
+                JsonObject body = definition.buildRequest(planningType, jdText, titleText,
+                        mode == TEXT ? resumeText : "", mode == URL_FILE ? explicitUrl : "");
+                openResult(definition, key, body, summary);
+            } catch (RuntimeException e) {
+                status.setText("资料准备失败，请检查输入后重试。");
+            }
+            return;
+        }
+        final long requestGeneration = ++generation;
+        preparing = true;
+        preparationClient = client;
+        updateButtons();
+        status.setText(mode == HISTORY ? "正在下载并上传历史简历，可取消准备。" : "正在上传文件，可取消准备。");
+        preparationTask = preparationExecutor.submit(() -> {
+            try {
+                final String uploadedFile;
+                if (mode == HISTORY) uploadedFile = client.uploadResume(selectedToken);
+                else {
+                    // openInputStream 可能不响应中断；返回后仍交给已取消的 client，确保关闭。
+                    try (InputStream input = getContentResolver().openInputStream(selectedUri)) {
+                        uploadedFile = client.upload(input, selectedName, selectedMime);
+                    }
+                }
+                JsonObject body = definition.buildRequest(planningType, jdText, titleText, "", uploadedFile);
+                runOnUiThread(() -> {
+                    if (!isCurrentPreparation(requestGeneration)) return;
+                    preparing = false;
+                    preparationClient = null;
+                    preparationTask = null;
+                    updateButtons();
+                    try { openResult(definition, key, body, summary); }
+                    catch (RuntimeException e) { status.setText("无法打开结果页面，请重试。"); }
+                });
+            } catch (Exception e) {
+                // 不透传异常 message、上传响应或 URI，以免泄露 token、key 和简历内容。
+                runOnUiThread(() -> {
+                    if (!isCurrentPreparation(requestGeneration)) return;
+                    preparing = false;
+                    preparationClient = null;
+                    preparationTask = null;
+                    updateButtons();
+                    status.setText("文件准备失败，请检查文件或网络后重试。");
+                });
+            }
+        });
+    }
+
+    private void openResult(AgentDefinition definition, String key, JsonObject body, String summary) {
+        if (isFinishing() || isDestroyed()) return;
+        AgentResultActivity.start(this, key, definition.name, body.getAsJsonObject("inputs"),
+                body.get("query").getAsString(), "", body.get("response_mode").getAsString(), summary);
+    }
+
+    private static String initialSummary(AgentDefinition definition, String type, String title,
+                                         int mode, String resumeText, String name) {
+        String business = definition.name + (definition == AgentDefinition.CAREER_AGENT ? " · " + type : "");
+        if (definition == AgentDefinition.DIAGNOSIS_AGENT && !title.trim().isEmpty()) {
+            business += "\n职位：" + title.trim();
+        }
+        if (mode == TEXT) {
+            String content = resumeText.trim();
+            int end = content.offsetByCodePoints(0, Math.min(120, content.codePointCount(0, content.length())));
+            return business + "\n简历：" + content.substring(0, end);
+        }
+        // URL 的路径/查询可能携带凭据，不从 URL 提取文件名，不展示 URL 或下载 token。
+        return business + "\n文件：" + (mode == URL_FILE ? "公网URL文件" : (name.isEmpty() ? "未命名" : name));
+    }
+
+    private boolean isCurrentPreparation(long expected) {
+        return preparing && generation == expected && !isFinishing() && !isDestroyed();
+    }
+
+    private void cancelPreparation() {
+        // 先使 UI 回调失效，再断开网络并中断工作线程；取消不保证服务端撤回已接收的文件。
+        // 即使上传刚完成、成功回调已经排队，也不能在取消、退出或旋转后跳转。
+        ++generation;
+        preparing = false;
+        AgentApiClient client = preparationClient;
+        Future<?> task = preparationTask;
+        preparationClient = null;
+        preparationTask = null;
+        if (task != null) task.cancel(true);
+        // disconnect/close 可能阻塞；独立短生命周期线程不占用主线程，
+        // 也不排在上传任务之后或依赖即将关闭的 preparationExecutor。
+        if (client != null) new Thread(client::cancel, "agent-preparation-cancel").start();
+        updateButtons();
+    }
+
+    @Override public void finish() {
+        cancelPreparation();
+        super.finish();
+    }
+
+    @Override protected void onDestroy() {
+        cancelPreparation();
+        preparationExecutor.shutdown();
+        super.onDestroy();
     }
 
     private void updateButtons() {
-        if (begin != null) begin.setEnabled(!invalidParameters);
+        if (begin == null) return;
+        begin.setEnabled(!invalidParameters && !preparing);
+        for (View view : new View[]{agent, source, careerType, jd, jobTitle, resume, fileUrl, choose}) {
+            view.setEnabled(!preparing);
+        }
+        cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
+        cancel.setEnabled(preparing);
+    }
+
+    /** 纯 URI/字面量校验，不查询 DNS；域名实际解析和重定向的安全边界需由服务端保证。 */
+    private static boolean isPublicFileUrl(String value) {
+        for (int i = 0; i < value.length(); i++) {
+            if (Character.isISOControl(value.charAt(i)) || Character.isWhitespace(value.charAt(i))) return false;
+        }
+        try {
+            URI uri = new URI(value);
+            String scheme = uri.getScheme();
+            if (!("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme))
+                    || uri.isOpaque() || uri.getRawUserInfo() != null || uri.getHost() == null
+                    || uri.getHost().isEmpty() || uri.getPort() == 0 || uri.getPort() > 65535) return false;
+            // 拒绝转义控制字符，避免 URL 解码后出现换行/NUL 等。
+            String decoded = uri.getSchemeSpecificPart();
+            for (int i = 0; i < decoded.length(); i++) {
+                if (Character.isISOControl(decoded.charAt(i))) return false;
+            }
+            String host = uri.getHost().toLowerCase(Locale.ROOT);
+            if (host.endsWith(".")) host = host.substring(0, host.length() - 1);
+            if (host.startsWith("[")) {
+                // 保守接受全球单播 IPv6（2000::/3），排除本机、ULA、链路本地及映射 IPv4。
+                String literal = host.substring(1, host.length() - 1);
+                return literal.matches("[23][0-9a-f]{3}:[0-9a-f:]+")
+                        && !literal.startsWith("2001:db8:");
+            }
+            if (host.matches("[0-9.]+")) {
+                String[] parts = host.split("\\.", -1);
+                if (parts.length != 4) return false;
+                int[] octets = new int[4];
+                for (int i = 0; i < 4; i++) {
+                    if (parts[i].isEmpty() || parts[i].length() > 3
+                            || (parts[i].length() > 1 && parts[i].startsWith("0"))) return false;
+                    octets[i] = Integer.parseInt(parts[i]);
+                    if (octets[i] > 255) return false;
+                }
+                int a = octets[0], b = octets[1];
+                return a != 0 && a != 10 && a != 127 && a < 224
+                        && !(a == 169 && b == 254) && !(a == 172 && b >= 16 && b <= 31)
+                        && !(a == 192 && (b == 168 || b == 0))
+                        && !(a == 100 && b >= 64 && b <= 127) && !(a == 198 && (b == 18 || b == 19));
+            }
+            // 单标签、常见本地域名和非标准数字 IP 表示不当作公网地址。
+            return host.contains(".") && !host.equals("localhost") && !host.endsWith(".localhost")
+                    && !host.endsWith(".local") && !host.endsWith(".lan") && !host.endsWith(".internal")
+                    && !host.endsWith(".home") && !host.endsWith(".home.arpa")
+                    && !host.matches("(?i)(?:0x[0-9a-f]+|[0-9]+)(?:\\.(?:0x[0-9a-f]+|[0-9]+))*");
+        } catch (URISyntaxException | IllegalArgumentException e) {
+            return false;
+        }
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        // 保存状态即取消准备，不恢复网络任务或自动重传，旋转后由用户再次确认开始。
+        boolean wasPreparing = preparing;
+        cancelPreparation();
+        if (wasPreparing) status.setText("页面状态已保存，文件准备已取消；请重新开始。");
         super.onSaveInstanceState(state);
         state.putBoolean("invalid_parameters", invalidParameters);
         state.putInt("agent", agent.getSelectedItemPosition());
@@ -333,7 +508,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         state.putString("jd", jd.getText().toString());
         state.putString("title", jobTitle.getText().toString());
         state.putString("resume", resume.getText().toString());
-        state.putString("cos", cosKey.getText().toString());
+        state.putString("file_url", fileUrl.getText().toString());
         state.putString("uri", fileUri == null ? "" : fileUri.toString());
         state.putString("filename", filename);
         state.putString("mime", mime);
@@ -351,7 +526,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         jd.setText(state.getString("jd", ""));
         jobTitle.setText(state.getString("title", ""));
         resume.setText(state.getString("resume", ""));
-        cosKey.setText(state.getString("cos", ""));
+        fileUrl.setText(state.getString("file_url", ""));
         String uri = state.getString("uri", "");
         if (!uri.isEmpty()) fileUri = Uri.parse(uri);
         filename = state.getString("filename", "resume");

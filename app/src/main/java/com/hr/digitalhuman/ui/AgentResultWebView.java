@@ -11,6 +11,7 @@ import android.webkit.WebView;
 import android.webkit.WebViewClient;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonArray;
 import com.google.gson.JsonParser;
 
 import java.io.ByteArrayInputStream;
@@ -23,8 +24,7 @@ final class AgentResultWebView extends WebView {
     private boolean reset = true, busy, disposed;
     private int readingY;
     private long revision, session;
-    private String pending = "", delivered = "";
-    private boolean pendingRunning;
+    private JsonArray pending = new JsonArray(), delivered = new JsonArray();
     private boolean dirty = true;
     private Runnable failureListener;
 
@@ -85,9 +85,8 @@ final class AgentResultWebView extends WebView {
 
     void setFailureListener(Runnable listener) { failureListener = listener; }
 
-    void render(String markdown, boolean running) {
-        pending = markdown;
-        pendingRunning = running;
+    void render(JsonArray messages) {
+        pending = messages;
         dirty = true;
         if (ready && !busy) { removeCallbacks(pump); post(pump); }
     }
@@ -110,11 +109,21 @@ final class AgentResultWebView extends WebView {
                     if (value.get("failed").getAsBoolean() && failureListener != null) failureListener.run();
                     if (dirty && (reset || value.get("committed").getAsLong() >= revision)) {
                         JsonObject payload = new JsonObject();
-                        boolean snapshot = reset || !pending.startsWith(delivered);
+                        // 同轮只发送最后一条回复增量；新增轮次/恢复时发送消息快照。
+                        int last = pending.size() - 1;
+                        boolean snapshot = reset || last < 0 || pending.size() != delivered.size();
+                        String previous = snapshot ? "" : delivered.get(last).getAsJsonObject().get("text").getAsString();
+                        String current = last < 0 ? "" : pending.get(last).getAsJsonObject().get("text").getAsString();
+                        snapshot |= !current.startsWith(previous);
                         payload.addProperty("snapshot", snapshot);
-                        payload.addProperty("text", snapshot ? pending : pending.substring(delivered.length()));
+                        if (snapshot) payload.add("messages", pending);
+                        else {
+                            payload.addProperty("text", current.substring(previous.length()));
+                            JsonObject message = pending.get(last).getAsJsonObject();
+                            payload.addProperty("status", message.get("status").getAsString());
+                            payload.addProperty("running", message.get("running").getAsBoolean());
+                        }
                         delivered = pending;
-                        payload.addProperty("running", pendingRunning);
                         payload.addProperty("session", session);
                         payload.addProperty("revision", ++revision);
                         payload.addProperty("reset", reset);
@@ -129,20 +138,12 @@ final class AgentResultWebView extends WebView {
                         });
                     } else postDelayed(this, 100);
                 } catch (RuntimeException ignored) {
-                    // 旧 WebView / 前端初始化异常不影响原生正文复制。
+                    // 旧 WebView / 前端初始化异常不影响原生消息状态，稍后再次检查。
                     postDelayed(this, 250);
                 }
             });
         }
     };
-
-    void resetResult() {
-        session++;
-        following = true;
-        readingY = 0;
-        reset = true;
-        render("", false);
-    }
 
     void returnToLatest() {
         following = true;

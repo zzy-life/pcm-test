@@ -25,7 +25,7 @@ for (const tag of ['strong', 'em', 'del', 'pre', 'code', 'blockquote', 'h1', 'h2
 }
 components.table = ({ children }) => <div className="table-scroll"><table>{children}</table></div>;
 
-let current = { text: '', running: false, revision: 0, following: true, y: 0 };
+let current = { messages: [], revision: 0, following: true, y: 0 };
 let apply;
 let committed = -1;
 let failed = false;
@@ -50,6 +50,18 @@ class Boundary extends React.Component {
   componentDidCatch() { failed = true; }
   render() { return this.state.error ? <pre>{this.props.text}</pre> : this.props.children; }
 }
+const Message = React.memo(function Message({ message }) {
+  return message.user ? <section className="user-message">
+    <div className="speaker">您说</div><div className="user-text">{message.text}</div>
+  </section> : <section className="assistant-message">
+    <header>{message.name || '智能体'}</header>
+    <div className="message-status">{message.status}</div>
+    <div className="markdown"><Boundary text={message.text}>
+      <Streamdown rehypePlugins={plugins} components={components} controls={false}
+        isAnimating={message.running}>{message.text}</Streamdown>
+    </Boundary></div>
+  </section>;
+});
 function App() {
   const [value, setValue] = useState(current);
   apply = setValue;
@@ -59,10 +71,8 @@ function App() {
     window.scrollTo(0, following ? document.documentElement.scrollHeight : readingY);
     requestAnimationFrame(() => { programmatic = false; });
   }, [value]);
-  return <Boundary key={value.session} text={value.text}>
-    <Streamdown rehypePlugins={plugins} components={components} controls={false}
-      isAnimating={value.running}>{value.text}</Streamdown>
-  </Boundary>;
+  return <main>{value.messages.map((message, index) =>
+    <Message key={index} message={message} />)}</main>;
 }
 // 原生只向固定入口传 JSON，不暴露原生对象给模型生成的内容。
 window.agentRenderer = {
@@ -72,7 +82,15 @@ window.agentRenderer = {
       readingY = value.y || 0;
       failed = false;
     }
-    current = { ...value, text: value.snapshot ? value.text : current.text + value.text };
+    let messages;
+    if (value.snapshot) messages = value.messages;
+    else {
+      messages = current.messages.slice();
+      const last = messages.length - 1;
+      messages[last] = { ...messages[last], text: messages[last].text + value.text,
+        status: value.status, running: value.running };
+    }
+    current = { ...value, messages };
     apply(current);
   },
   bottom,

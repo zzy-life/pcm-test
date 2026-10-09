@@ -49,6 +49,7 @@ public final class AgentApiClient {
     public interface Listener {
         void onAnswer(String chunk);
         void onComplete();
+        default void onConversationId(String id) {}
     }
 
     public AgentApiClient(String apiKey) {
@@ -141,7 +142,14 @@ public final class AgentApiClient {
         String type = stringField(event, "event");
         if (type == null) throw failure("对话事件缺少 event 类型");
 
-        // conversation_id 暂未用于连续对话；后续可在此保存首次收到的会话 ID。
+        String conversationId = stringField(event, "conversation_id");
+        if (conversationId != null && !conversationId.isEmpty()) {
+            if (conversationId.length() > 256 || hasControl(conversationId)) {
+                throw failure("会话 ID 无效");
+            }
+            listener.onConversationId(conversationId);
+            checkCancelled();
+        }
         switch (type) {
             case "message":
             case "agent_message":

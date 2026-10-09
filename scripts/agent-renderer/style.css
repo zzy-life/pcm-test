@@ -1,5 +1,14 @@
 html { color-scheme: dark; background: #121e2e; color: #f4f7fb; font: 16px/1.65 sans-serif; overflow-wrap: anywhere; }
-body { margin: 0; padding: 16px; }
+body { margin: 0; padding: 8px; }
+main { display: flex; flex-direction: column; gap: 10px; }
+.user-message { background: #18283d; border: 1px solid #2c4464; border-radius: 16px; padding: 10px 14px; }
+.speaker { color: #5b9bff; font-size: 13px; margin-bottom: 4px; }
+.user-text { white-space: pre-wrap; }
+.assistant-message { border: 1px solid #2c4464; border-radius: 16px; overflow: hidden; background: #121e2e; }
+.assistant-message header { background: linear-gradient(90deg, #1967d2, #163a6b); padding: 12px 16px; font-size: 18px; font-weight: 700; }
+.message-status { color: #9bb0c9; font-size: 13px; padding: 8px 16px 0; }
+.markdown { padding: 4px 16px 16px; }
+.markdown > :first-child { margin-top: 8px; }
 h1,h2,h3,h4 { line-height: 1.35; margin: 20px 0 12px; }
 h1 { font-size: 26px; } h2 { font-size: 22px; } h3 { font-size: 19px; }
 p { margin: 10px 0; }
