@@ -15,6 +15,10 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
     private java.lang.ref.WeakReference<Activity> resumedActivity = new java.lang.ref.WeakReference<>(null);
     private java.lang.ref.WeakReference<MainActivity> mainActivity = new java.lang.ref.WeakReference<>(null);
 
+    private static boolean isAgentActivity(Activity activity) {
+        return activity instanceof AgentStreamActivity || activity instanceof AgentResultActivity;
+    }
+
     public boolean isAgentPageVisible() {
         return visibleAgentPages > 0;
     }
@@ -23,7 +27,7 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
         if (activity instanceof MainActivity) {
             mainActivity = new java.lang.ref.WeakReference<>((MainActivity) activity);
         }
-        if (activity instanceof AgentStreamActivity) {
+        if (isAgentActivity(activity)) {
             visibleAgentPages++;
             MainActivity main = mainActivity.get();
             if (main != null) main.prepareForAgentPage();
@@ -45,7 +49,7 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
         TextView entry = UiDecor.chip(activity, "智能体");
         entry.setTag(TAG);
         entry.setGravity(Gravity.CENTER);
-        entry.setContentDescription(activity instanceof AgentStreamActivity
+        entry.setContentDescription(isAgentActivity(activity)
                 ? "当前为智能体分析页面" : "打开智能体分析页面");
         entry.setClickable(true);
         entry.setFocusable(true);
@@ -56,9 +60,9 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
         params.setMargins(UiDecor.dp(activity, 16), UiDecor.dp(activity, 16),
                 UiDecor.dp(activity, 16), UiDecor.dp(activity, 16));
         content.addView(entry, params);
-        if (activity instanceof AgentStreamActivity) entry.setEnabled(false);
+        if (isAgentActivity(activity)) entry.setEnabled(false);
         entry.setOnClickListener(v -> {
-            if (!(activity instanceof AgentStreamActivity)) {
+            if (!(isAgentActivity(activity))) {
                 AgentStreamActivity.start(activity);
             }
         });
@@ -76,7 +80,7 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
     @Override public void onActivitySaveInstanceState(Activity activity, Bundle state) { }
     @Override public void onActivityDestroyed(Activity activity) {
         // 文件选择器或应用退后台不结束隔离；真正退出后仅恢复前台 MainActivity。
-        if (activity instanceof AgentStreamActivity) {
+        if (isAgentActivity(activity)) {
             visibleAgentPages = Math.max(0, visibleAgentPages - 1);
             if (visibleAgentPages == 0) restoreMainIfResumed();
         }

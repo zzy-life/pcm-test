@@ -6,11 +6,7 @@ import android.content.Intent;
 import android.database.Cursor;
 import android.net.Uri;
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.provider.OpenableColumns;
-import android.text.Editable;
-import android.text.TextWatcher;
 import android.view.View;
 import android.view.ViewGroup;
 import android.view.WindowManager;
@@ -25,15 +21,9 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
-import com.google.gson.JsonObject;
 import com.hr.digitalhuman.agents.AgentApiClient;
 import com.hr.digitalhuman.agents.AgentDefinition;
 
-import java.io.IOException;
-import java.io.InputStream;
-import java.util.concurrent.ExecutorService;
-import java.util.concurrent.Executors;
-import java.util.concurrent.Future;
 
 /** 独立原生页面：不依赖机器人连接，所有网络操作在后台执行。 */
 public class AgentStreamActivity extends AppCompatActivity {
@@ -47,31 +37,21 @@ public class AgentStreamActivity extends AppCompatActivity {
     public static final String EXTRA_RECORD_ID = "record_id";
     private static final int PICK_FILE = 6101;
     private static final int MAX_INPUT_CHARS = 50000;
-    private static final int MAX_ANSWER_CHARS = 200000;
     private boolean invalidParameters;
     private static final int TEXT = 0, LOCAL = 1, COS = 2, HISTORY = 3;
     private static final String SAMPLE_JD = "【虚构示例 JD，请替换】招聘 Java 后端工程师，负责业务接口开发与数据库优化，要求熟悉 Java、SQL 和团队协作。";
     private static final String SAMPLE_RESUME = "【虚构示例简历，请替换】示例候选人：3 年 Java 后端开发经验，参与订单系统接口开发、SQL 优化及自动化测试。以上经历均为虚构。";
 
-    private final Handler main = new Handler(Looper.getMainLooper());
-    private final ExecutorService worker = Executors.newCachedThreadPool();
-    private final Object answerLock = new Object();
-    private final StringBuilder answer = new StringBuilder();
     private Spinner agent, source, careerType;
     private EditText jd, jobTitle, resume, cosKey;
-    private TextView status, result, fileInfo, agentHint;
-    private Button begin, retry, stop, choose;
+    private TextView status, fileInfo, agentHint;
+    private Button begin, choose;
     private Uri fileUri;
     private String filename = "resume", mime = "application/octet-stream";
-    private String downloadToken = "", resumeName = "", cachedCosKey = "";
+    private String downloadToken = "", resumeName = "";
     private Long recordId;
-    private volatile long requestId;
-    private boolean running, initializing = true;
-    private volatile boolean destroyed;
+    private boolean initializing = true;
     private int lastAgent, lastSource, lastType;
-    private AgentApiClient client;
-    private Future<?> task;
-    private Runnable pendingRender;
 
     public static void start(Context context) {
         launch(context, new Intent(context, AgentStreamActivity.class));
@@ -118,28 +98,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         Button back = button("返回");
         back.setOnClickListener(v -> finish());
         root.addView(back);
-        LinearLayout panels = new LinearLayout(this);
-        boolean wide = getResources().getConfiguration().screenWidthDp >= 720;
-        panels.setOrientation(wide ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL);
-        root.addView(panels, new LinearLayout.LayoutParams(-1, 0, 1));
         ScrollView inputScroll = new ScrollView(this);
         inputScroll.setFillViewport(true);
         LinearLayout inputs = column();
         UiDecor.styleCard(this, inputs);
         inputScroll.addView(inputs);
-        LinearLayout output = column();
-        UiDecor.styleCard(this, output);
-        if (wide) {
-            panels.addView(inputScroll, new LinearLayout.LayoutParams(0, -1, 0.44f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, 0.56f);
-            lp.setMargins(dp(12), 0, 0, 0);
-            panels.addView(output, lp);
-        } else {
-            panels.addView(inputScroll, new LinearLayout.LayoutParams(-1, 0, 1.15f));
-            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-1, 0, 1);
-            lp.setMargins(0, dp(10), 0, 0);
-            panels.addView(output, lp);
-        }
+        root.addView(inputScroll, new LinearLayout.LayoutParams(-1, 0, 1));
         label(inputs, "选择智能体");
         agent = spinner(inputs, "职业规划", "简历诊断");
         agentHint = UiDecor.subtitle(this, "");
@@ -157,26 +121,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
         inputs.addView(UiDecor.subtitle(this,
-                "点击开始或重试，即授权将所选简历及本次智能体所需输入发送至品才猫第三方智能体服务。请勿提交未经授权的个人资料。"));
+                "点击开始或重试，即授权将所选简历及本次智能体所需输入发送至智能体服务。请勿提交未经授权的个人资料。"));
         begin = button("授权并开始");
-        retry = button("授权并重试");
-        stop = button("停止");
         inputs.addView(begin);
-        inputs.addView(retry);
-        inputs.addView(stop);
         begin.setOnClickListener(v -> startRequest());
-        retry.setOnClickListener(v -> { cancelRequest(false); startRequest(); });
-        stop.setOnClickListener(v -> cancelRequest(true));
-        output.addView(UiDecor.title(this, "分析结果"));
-        status = UiDecor.subtitle(this, "就绪：确认资料后开始");
-        output.addView(status);
-        ScrollView resultScroll = new ScrollView(this);
-        result = UiDecor.title(this, "结果将逐步显示在这里。可随时停止，编辑后重试。");
-        result.setTextSize(15);
-        result.setTextIsSelectable(true);
-        result.setPadding(0, dp(12), 0, dp(88));
-        resultScroll.addView(result);
-        output.addView(resultScroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示 Markdown 分析结果。");
+        inputs.addView(status);
         setContentView(root);
     }
 
@@ -232,35 +182,21 @@ public class AgentStreamActivity extends AppCompatActivity {
                 if (parent == source) {
                     if (p == lastSource) return;
                     lastSource = p;
-                    cachedCosKey = "";
                     updateSource();
                 } else if (parent == agent) {
                     if (p == lastAgent) return;
                     lastAgent = p;
-                    cachedCosKey = ""; // 不跨智能体密钥复用上传结果。
                     updateAgent();
                 } else {
                     if (p == lastType) return;
                     lastType = p;
                 }
-                if (running) cancelRequest(true);
             }
             @Override public void onNothingSelected(AdapterView<?> parent) { }
         };
         agent.setOnItemSelectedListener(listener);
         source.setOnItemSelectedListener(listener);
         careerType.setOnItemSelectedListener(listener);
-        for (EditText input : new EditText[]{resume, cosKey, jd, jobTitle}) {
-            input.addTextChangedListener(new TextWatcher() {
-                @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-                @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                    if (initializing) return;
-                    if (input == resume || input == cosKey) cachedCosKey = "";
-                    if (running) cancelRequest(true);
-                }
-                @Override public void afterTextChanged(Editable s) { }
-            });
-        }
     }
 
     private void updateAgent() {
@@ -297,8 +233,6 @@ public class AgentStreamActivity extends AppCompatActivity {
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
         if (requestCode != PICK_FILE || resultCode != RESULT_OK || data == null || data.getData() == null) return;
-        cancelRequest(false);
-        cachedCosKey = "";
         fileUri = data.getData();
         filename = "resume";
         mime = "application/octet-stream";
@@ -321,7 +255,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void startRequest() {
-        if (running || destroyed || invalidParameters) return;
+        if (invalidParameters) return;
         AgentDefinition definition = agent.getSelectedItemPosition() == 0
                 ? AgentDefinition.CAREER_AGENT : AgentDefinition.DIAGNOSIS_AGENT;
         String key = definition.apiKey();
@@ -346,117 +280,29 @@ public class AgentStreamActivity extends AppCompatActivity {
         if (mode == COS && (explicitKey.contains("://") || explicitKey.equals(downloadToken))) {
             status.setText("请输入已上传的 cos_key，不要使用 URL 或历史下载 token。"); return;
         }
-        final AgentApiClient requestClient;
-        try { requestClient = new AgentApiClient(key); }
+        try { new AgentApiClient(key); }
         catch (IllegalArgumentException e) { status.setText("密钥配置无效，请检查 " + definition.configurationName); return; }
-        final Uri selectedUri = fileUri;
-        final String selectedName = filename, selectedMime = mime, selectedToken = downloadToken;
-        final String reusableKey = cachedCosKey;
-        final long id = ++requestId;
-        final java.util.concurrent.atomic.AtomicBoolean outputLimitReached = new java.util.concurrent.atomic.AtomicBoolean();
-        client = requestClient;
-        running = true;
-        synchronized (answerLock) { answer.setLength(0); }
-        result.setText("");
-        status.setText(mode == LOCAL || mode == HISTORY ? "准备简历并上传…" : "正在分析…");
-        updateButtons();
-        task = worker.submit(() -> {
-            try {
-                String uploaded = mode == COS ? explicitKey : reusableKey;
-                if ((mode == LOCAL || mode == HISTORY) && uploaded.isEmpty()) {
-                    if (mode == LOCAL) {
-                        try (InputStream input = getContentResolver().openInputStream(selectedUri)) {
-                            if (input == null) throw new IOException();
-                            uploaded = requestClient.upload(input, selectedName, selectedMime);
-                        }
-                    } else uploaded = requestClient.uploadResume(selectedToken);
-                    final String cache = uploaded;
-                    main.post(() -> { if (isCurrent(id)) cachedCosKey = cache; });
-                }
-                if (!isCurrent(id)) return;
-                JsonObject body = definition.buildRequest(planningType, jdText, titleText,
-                        mode == TEXT ? resumeText : "", mode == TEXT ? "" : uploaded);
-                main.post(() -> { if (isCurrent(id)) status.setText("正在分析，结果持续更新…"); });
-                requestClient.stream(body, new AgentApiClient.Listener() {
-                    @Override public void onAnswer(String chunk) {
-                        synchronized (answerLock) {
-                            if (!isCurrent(id)) return;
-                            if ((long) answer.length() + chunk.length() > MAX_ANSWER_CHARS) {
-                                outputLimitReached.set(true);
-                                throw new IllegalStateException("结果超过显示上限");
-                            }
-                            answer.append(chunk);
-                        }
-                        scheduleRender(id);
-                    }
-                    @Override public void onComplete() {
-                        main.post(() -> finishRequest(id, "分析完成"));
-                    }
-                });
-            } catch (IOException | RuntimeException e) {
-                // 不显示原始异常、服务端正文、下载凭据或密钥。
-                main.post(() -> finishRequest(id, outputLimitReached.get()
-                        ? "结果超过显示上限，已停止接收；请缩小分析范围后重试。"
-                        : "请求失败或流中断。请检查网络、密钥权限和文件（最多 50MB），确认资料后重试。"));
-            }
-        });
-    }
-
-    private boolean isCurrent(long id) { return !destroyed && requestId == id; }
-
-    /** 每个请求最多登记一个 100ms 更新任务，不为每个分片向主线程排队。 */
-    private void scheduleRender(long id) {
-        synchronized (answerLock) {
-            if (!isCurrent(id) || pendingRender != null) return;
-            pendingRender = () -> {
-                synchronized (answerLock) {
-                    pendingRender = null;
-                    if (isCurrent(id)) result.setText(answer.toString());
-                }
-            };
-            main.postDelayed(pendingRender, 100);
+        Intent intent = new Intent(this, AgentResultActivity.class);
+        intent.putExtra(EXTRA_AGENT_ID, definition.id);
+        intent.putExtra(EXTRA_JOB_INFO, jdText);
+        intent.putExtra(EXTRA_JOB_TITLE, titleText);
+        intent.putExtra(EXTRA_RESUME_CONTENT, mode == TEXT ? resumeText : "");
+        intent.putExtra(EXTRA_COS_KEY, mode == COS ? explicitKey : "");
+        intent.putExtra(EXTRA_DOWNLOAD_TOKEN, mode == HISTORY ? downloadToken : "");
+        intent.putExtra(EXTRA_RESUME_NAME, resumeName);
+        intent.putExtra(AgentResultActivity.EXTRA_SOURCE, mode);
+        intent.putExtra(AgentResultActivity.EXTRA_TYPE, planningType);
+        if (mode == LOCAL) {
+            intent.setData(fileUri);
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+            intent.putExtra(AgentResultActivity.EXTRA_FILE_NAME, filename);
+            intent.putExtra(AgentResultActivity.EXTRA_MIME, mime);
         }
-    }
-
-    private void finishRequest(long id, String message) {
-        if (!isCurrent(id)) return;
-        synchronized (answerLock) {
-            if (pendingRender != null) main.removeCallbacks(pendingRender);
-            pendingRender = null;
-            result.setText(answer.toString());
-        }
-        running = false;
-        client = null;
-        task = null;
-        status.setText(message);
-        updateButtons();
-    }
-
-    private void cancelRequest(boolean showStatus) {
-        ++requestId; // 先使旧回调失效，再中断任务和连接。
-        AgentApiClient oldClient = client;
-        client = null;
-        if (task != null) task.cancel(true);
-        task = null;
-        if (oldClient != null) {
-            // disconnect/close 可能涉及底层 I/O，不阻塞主线程。
-            worker.execute(oldClient::cancel);
-        }
-        synchronized (answerLock) {
-            if (pendingRender != null) main.removeCallbacks(pendingRender);
-            pendingRender = null;
-            if (result != null) result.setText(answer.toString());
-        }
-        running = false;
-        if (showStatus && status != null) status.setText("已停止；保留当前结果，可编辑资料后重试。");
-        updateButtons();
+        startActivity(intent);
     }
 
     private void updateButtons() {
-        if (begin == null) return;
-        begin.setEnabled(!running && !invalidParameters);
-        retry.setEnabled(!running && !invalidParameters);
-        stop.setEnabled(running);
+        if (begin != null) begin.setEnabled(!invalidParameters);
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
@@ -475,12 +321,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         state.putString("token", downloadToken);
         state.putString("name", resumeName);
         if (recordId != null) state.putLong("record", recordId);
-        state.putString("cache", cachedCosKey);
-        // 输入完整保存；大段结果不放入 Bundle，避免 Binder 事务过大。
-        synchronized (answerLock) {
-            state.putString("answer", answer.substring(0, Math.min(answer.length(), 16000)));
-        }
-        state.putString("status", running ? "页面已重建，原请求已停止；请确认资料后重试。" : status.getText().toString());
+        state.putString("status", status.getText().toString());
     }
 
     private void restore(Bundle state) {
@@ -499,19 +340,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         downloadToken = state.getString("token", "");
         resumeName = state.getString("name", "");
         if (state.containsKey("record")) recordId = state.getLong("record");
-        cachedCosKey = state.getString("cache", "");
-        answer.append(state.getString("answer", ""));
-        result.setText(answer.toString());
         status.setText(state.getString("status", "就绪"));
-    }
-
-    @Override protected void onDestroy() {
-        destroyed = true;
-        cancelRequest(false);
-        main.removeCallbacksAndMessages(null);
-        // 已排队的 cancel 仍执行；不立即 shutdownNow 丢弃取消任务。
-        worker.shutdown();
-        super.onDestroy();
     }
 
     private LinearLayout column() {

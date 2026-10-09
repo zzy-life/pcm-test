@@ -66,6 +66,10 @@ dependencies {
     implementation 'androidx.cardview:cardview:1.0.0'
     implementation 'com.google.code.gson:gson:2.8.6'
     implementation 'com.google.zxing:core:3.3.3'
+    // 原生 Markdown 渲染：标题、列表、引用、代码块、表格及删除线。
+    implementation 'io.noties.markwon:core:4.6.2'
+    implementation 'io.noties.markwon:ext-tables:4.6.2'
+    implementation 'io.noties.markwon:ext-strikethrough:4.6.2'
     // 简历 PDF 本机预览（Pdfium）
     implementation 'com.github.mhiew:android-pdf-viewer:3.2.0-beta.3'
     implementation "org.jetbrains.kotlin:kotlin-stdlib:$kotlin_version"

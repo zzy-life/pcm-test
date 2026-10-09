@@ -50,6 +50,11 @@
             android:theme="@style/AppTheme"
             android:windowSoftInputMode="adjustResize" />
 
+        <activity
+            android:name=".ui.AgentResultActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
