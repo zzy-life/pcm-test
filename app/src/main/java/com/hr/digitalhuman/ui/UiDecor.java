@@ -49,6 +49,24 @@ public final class UiDecor {
         card.setPadding(p, p, p, p);
     }
 
+    /** 两个智能体页面复用项目按钮样式，清除主题 tint，避免覆盖圆角背景。 */
+    public static android.widget.Button button(Context ctx, String text, boolean primary) {
+        android.content.Context themed = new androidx.appcompat.view.ContextThemeWrapper(
+                ctx, primary ? R.style.BtnPrimary : R.style.BtnSecondary);
+        androidx.appcompat.widget.AppCompatButton button =
+                new androidx.appcompat.widget.AppCompatButton(themed, null, 0);
+        button.setSupportBackgroundTintList(null);
+        button.setText(text);
+        button.setAllCaps(false);
+        button.setMinimumHeight(dp(ctx, 48));
+        // 禁用态保持与后台任务状态一致，不能看起来仍可点击。
+        button.setTextColor(new android.content.res.ColorStateList(
+                new int[][]{new int[]{-android.R.attr.state_enabled}, new int[]{}},
+                new int[]{color(ctx, R.color.text_dim),
+                        color(ctx, primary ? R.color.white : R.color.text)}));
+        return button;
+    }
+
     public static TextView title(Context ctx, String text) {
         TextView tv = new TextView(ctx);
         tv.setText(text);

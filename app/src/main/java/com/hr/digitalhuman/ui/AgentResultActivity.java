@@ -5,7 +5,6 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Context;
 import android.widget.Toast;
-import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
@@ -20,9 +19,9 @@ import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.view.ViewCompat;
 
 import com.google.gson.JsonObject;
+import com.hr.digitalhuman.R;
 import com.hr.digitalhuman.agents.AgentApiClient;
 import com.hr.digitalhuman.agents.AgentDefinition;
 
@@ -121,25 +120,33 @@ public final class AgentResultActivity extends AppCompatActivity {
     private void createViews() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF0B1422);
-        root.setPadding(dp(12), dp(8), dp(12), dp(88));
+        root.setBackgroundResource(R.drawable.bg_page);
+        root.setPadding(dp(24), dp(12), dp(24), dp(12));
         LinearLayout top = new LinearLayout(this);
+        top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         Button back = button("返回编辑");
         stop = button("停止");
         retry = button("重试");
         Button copy = button("复制 Markdown");
         copy.setOnClickListener(v -> copyMarkdown());
-        top.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.4f));
-        top.addView(back, new LinearLayout.LayoutParams(0, -2, 1));
-        top.addView(stop, new LinearLayout.LayoutParams(0, -2, 1));
-        top.addView(retry, new LinearLayout.LayoutParams(0, -2, 1.4f));
+        top.addView(back);
+        TextView heading = UiDecor.title(this, "智能体 · 分析结果");
+        heading.setTextSize(18);
+        heading.setTypeface(null, android.graphics.Typeface.BOLD);
+        heading.setGravity(android.view.Gravity.CENTER);
+        top.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        for (Button action : new Button[]{copy, stop, retry}) {
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
+            lp.leftMargin = dp(8);
+            top.addView(action, lp);
+        }
         root.addView(top);
-        root.addView(UiDecor.title(this, "智能体 · Markdown 分析结果"));
         status = UiDecor.subtitle(this, "准备分析…");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
         scroll = new FollowingScrollView(this);
-        UiDecor.styleCard(this, scroll);
+        scroll.setBackgroundResource(R.drawable.bg_glass_panel);
+        scroll.setPadding(dp(16), dp(16), dp(16), dp(16));
         result = UiDecor.title(this, "");
         result.setTextSize(16);
         result.setLineSpacing(dp(3), 1f);
@@ -150,7 +157,9 @@ public final class AgentResultActivity extends AppCompatActivity {
         result.setSaveEnabled(false);
         scroll.setSaveEnabled(false);
         scroll.addView(result, new android.widget.ScrollView.LayoutParams(-1, -2));
-        root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
+        LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, 0, 1);
+        scrollLp.topMargin = dp(10);
+        root.addView(scroll, scrollLp);
         latest = button("回到最新");
         root.addView(latest, new LinearLayout.LayoutParams(-1, -2));
         scroll.setFollowListener(following -> latest.setVisibility(following ? View.GONE : View.VISIBLE));
@@ -454,12 +463,9 @@ public final class AgentResultActivity extends AppCompatActivity {
     private int dp(int value) { return UiDecor.dp(this, value); }
 
     private Button button(String text) {
-        Button button = new Button(this);
-        button.setText(text);
-        button.setTextSize(13);
-        button.setTextColor(0xFFEAF2FF);
-        button.setMinHeight(dp(48));
-        ViewCompat.setBackgroundTintList(button, ColorStateList.valueOf(0xFF264C76));
+        Button button = UiDecor.button(this, text, false);
+        button.setTextSize(14);
+        button.setPadding(dp(16), 0, dp(16), 0);
         return button;
     }
 }

@@ -47,12 +47,14 @@
         <activity
             android:name=".ui.AgentStreamActivity"
             android:exported="false"
+            android:screenOrientation="landscape"
             android:theme="@style/AppTheme"
             android:windowSoftInputMode="adjustResize" />
 
         <activity
             android:name=".ui.AgentResultActivity"
             android:exported="false"
+            android:screenOrientation="landscape"
             android:theme="@style/AppTheme" />
 
         <provider

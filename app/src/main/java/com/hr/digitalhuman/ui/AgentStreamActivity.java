@@ -21,6 +21,7 @@ import android.widget.TextView;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import com.hr.digitalhuman.R;
 import com.hr.digitalhuman.agents.AgentApiClient;
 import com.hr.digitalhuman.agents.AgentDefinition;
 
@@ -90,38 +91,58 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void createViews() {
         LinearLayout root = column();
-        root.setBackgroundColor(0xFF0B1422);
-        root.setPadding(dp(16), dp(12), dp(16), dp(88));
-        TextView heading = UiDecor.title(this, "智能体 · 职业资料分析");
-        heading.setTextSize(22);
-        root.addView(heading);
+        root.setBackgroundResource(R.drawable.bg_page);
+        root.setPadding(dp(24), dp(12), dp(24), dp(12));
+        LinearLayout header = new LinearLayout(this);
+        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
         Button back = button("返回");
         back.setOnClickListener(v -> finish());
-        root.addView(back);
-        ScrollView inputScroll = new ScrollView(this);
-        inputScroll.setFillViewport(true);
+        header.addView(back);
+        TextView heading = UiDecor.title(this, "智能体 · 职业资料分析");
+        heading.setTextSize(18);
+        heading.setTypeface(null, android.graphics.Typeface.BOLD);
+        heading.setGravity(android.view.Gravity.CENTER);
+        header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        root.addView(header);
+
+        // 横屏按“分析配置 / 简历资料”分栏，各自滚动，键盘出现时仍可编辑。
+        LinearLayout panels = new LinearLayout(this);
+        LinearLayout.LayoutParams panelsLp = new LinearLayout.LayoutParams(-1, 0, 1);
+        panelsLp.topMargin = dp(12);
+        root.addView(panels, panelsLp);
+        LinearLayout settings = column();
         LinearLayout inputs = column();
-        UiDecor.styleCard(this, inputs);
-        inputScroll.addView(inputs);
-        root.addView(inputScroll, new LinearLayout.LayoutParams(-1, 0, 1));
-        label(inputs, "选择智能体");
-        agent = spinner(inputs, "职业规划", "简历诊断");
+        LinearLayout[] columns = {settings, inputs};
+        for (int i = 0; i < columns.length; i++) {
+            ScrollView inputScroll = new ScrollView(this);
+            inputScroll.setFillViewport(true);
+            columns[i].setBackgroundResource(R.drawable.bg_glass_panel);
+            columns[i].setPadding(dp(16), dp(16), dp(16), dp(16));
+            inputScroll.addView(columns[i], new ScrollView.LayoutParams(-1, -2));
+            LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, i == 0 ? 1f : 1.2f);
+            if (i > 0) lp.leftMargin = dp(12);
+            panels.addView(inputScroll, lp);
+        }
+        label(settings, "选择智能体");
+        agent = spinner(settings, "职业规划", "简历诊断");
         agentHint = UiDecor.subtitle(this, "");
-        inputs.addView(agentHint);
-        careerType = spinner(inputs, "晋升路径", "转型建议");
-        jobTitle = editor(inputs, "职位标题（可选，不等于 JD）", 1);
-        jd = editor(inputs, "职位 JD（简历诊断必填）", 4);
+        settings.addView(agentHint);
+        careerType = spinner(settings, "晋升路径", "转型建议");
+        jobTitle = editor(settings, "职位标题（可选，不等于 JD）", 1);
+        jd = editor(settings, "职位 JD（简历诊断必填）", 4);
         label(inputs, "简历来源（只发送所选来源）");
         source = spinner(inputs, "编辑简历文本", "本地文件", "已有 cos_key", "历史简历下载凭据");
         resume = editor(inputs, "简历正文", 5);
         cosKey = editor(inputs, "已上传文件的 cos_key（不是 URL 或 token）", 2);
         choose = button("选择本地文件（最多 50MB）");
-        inputs.addView(choose);
+        inputs.addView(choose, UiDecor.cardLp(this, 8));
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
-        begin = button("开始");
-        inputs.addView(begin);
+        begin = UiDecor.button(this, "开始", true);
+        LinearLayout.LayoutParams beginLp = UiDecor.cardLp(this, 0);
+        beginLp.topMargin = dp(12);
+        inputs.addView(begin, beginLp);
         begin.setOnClickListener(v -> startRequest());
         status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示 Markdown 分析结果。");
         inputs.addView(status);
@@ -350,35 +371,51 @@ public class AgentStreamActivity extends AppCompatActivity {
     private static String text(String value) { return value == null ? "" : value.trim(); }
     private void label(LinearLayout parent, String value) { parent.addView(UiDecor.subtitle(this, value)); }
     private Button button(String title) {
-        Button button = new Button(this);
-        button.setText(title);
-        button.setTextColor(0xFFEAF2FF);
-        androidx.core.view.ViewCompat.setBackgroundTintList(button,
-                android.content.res.ColorStateList.valueOf(0xFF264C76));
-        button.setMinHeight(dp(48));
-        return button;
+        return UiDecor.button(this, title, false);
     }
     private Spinner spinner(LinearLayout parent, String... options) {
-        Spinner spinner = new Spinner(this);
+        Spinner spinner = new androidx.appcompat.widget.AppCompatSpinner(this, Spinner.MODE_DROPDOWN);
+        androidx.core.view.ViewCompat.setBackgroundTintList(spinner, null);
+        spinner.setBackgroundResource(R.drawable.bg_input);
+        ((androidx.appcompat.widget.AppCompatSpinner) spinner)
+                .setPopupBackgroundResource(R.drawable.bg_input);
         ArrayAdapter<String> adapter = new ArrayAdapter<String>(this,
                 android.R.layout.simple_spinner_item, options) {
             @Override public View getView(int position, View convertView, ViewGroup group) {
                 TextView view = (TextView) super.getView(position, convertView, group);
-                view.setTextColor(0xFFEAF2FF);
-                view.setPadding(dp(8), dp(12), dp(8), dp(12));
+                view.setTextColor(UiDecor.color(AgentStreamActivity.this, R.color.text));
+                view.setTextSize(14);
+                view.setText(getItem(position) + "  ▾");
+                view.setSingleLine(true);
+                view.setEllipsize(android.text.TextUtils.TruncateAt.END);
+                view.setPadding(dp(14), dp(12), dp(14), dp(12));
+                return view;
+            }
+            @Override public View getDropDownView(int position, View convertView, ViewGroup group) {
+                TextView view = (TextView) super.getDropDownView(position, convertView, group);
+                view.setTextColor(UiDecor.color(AgentStreamActivity.this, R.color.text));
+                view.setTextSize(14);
+                view.setMinHeight(dp(48));
+                view.setPadding(dp(14), dp(12), dp(14), dp(12));
                 return view;
             }
         };
         adapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinner.setAdapter(adapter);
-        parent.addView(spinner, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams lp = UiDecor.cardLp(this, 8);
+        lp.topMargin = dp(6);
+        parent.addView(spinner, lp);
         return spinner;
     }
     private EditText editor(LinearLayout parent, String hint, int lines) {
         EditText field = new EditText(this);
         field.setHint(hint);
-        field.setTextColor(0xFFEAF2FF);
-        field.setHintTextColor(0xFF9FB1C9);
+        androidx.core.view.ViewCompat.setBackgroundTintList(field, null);
+        field.setBackgroundResource(R.drawable.bg_input);
+        field.setPadding(dp(14), dp(12), dp(14), dp(12));
+        field.setMinimumHeight(dp(48));
+        field.setTextColor(UiDecor.color(this, R.color.text));
+        field.setHintTextColor(UiDecor.color(this, R.color.text_dim));
         field.setTextSize(14);
         // 输入会随页面状态保存，限制长度以免超出 Android 状态事务大小。
         field.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(MAX_INPUT_CHARS)});
@@ -387,7 +424,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         field.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
         field.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | (lines > 1 ? android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE : 0));
-        parent.addView(field, new LinearLayout.LayoutParams(-1, -2));
+        LinearLayout.LayoutParams lp = UiDecor.cardLp(this, 8);
+        lp.topMargin = dp(6);
+        parent.addView(field, lp);
         return field;
     }
 }
