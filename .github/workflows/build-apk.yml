@@ -23,18 +23,25 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      # Android Gradle Plugin 7.0.4 使用 JDK 11。
-      - name: Set up Java 11
+      # 新版 Android SDK 命令行工具要求 JDK 17 或更高版本。
+      - name: Set up Java 17 for Android SDK
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '11'
+          java-version: '17'
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-31' 'build-tools;30.0.3'
+
+      # SDK 安装完成后切回 JDK 11，保持现有 Android Gradle Plugin 构建环境。
+      - name: Set up Java 11 for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '11'
 
       # 不调用指向本机 D 盘的 gradlew，由 Actions 安装相同版本。
       - name: Set up Gradle 7.5
