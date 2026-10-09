@@ -117,7 +117,8 @@ public final class AgentApiClient {
                     }
                     // 注释、event/id/retry 等字段不作为答案；以 JSON event 为业务类型。
                 }
-                // 未由空行封闭的事件不派发；EOF 不是业务完成事件。
+                // 兼容最后一个 data 事件后直接 EOF；仍必须有明确结束事件，不能将断流当成功。
+                if (hasData && dispatch(data.toString(), listener)) return;
                 throw failure("对话流已中断，未收到结束事件");
             }
         } catch (IOException | RuntimeException e) {
@@ -128,24 +129,61 @@ public final class AgentApiClient {
     }
 
     private boolean dispatch(String data, Listener listener) throws IOException {
-        JsonObject event = parseObject(data, "对话事件格式无效");
-        String type = stringField(event, "event");
+        return handleSseEvent(parseObject(data, "对话事件格式无效"), listener);
+    }
+
+    /**
+     * 参考 dify-sse.ts 集中分发业务事件；回调在网络线程执行。
+     * 返回 true 表示已收到终态，读取循环应退出；取消和错误通过异常中止。
+     */
+    private boolean handleSseEvent(JsonObject event, Listener listener) throws IOException {
         checkCancelled();
-        if ("message".equals(type) || "agent_message".equals(type)) {
-            String answer = stringField(event, "answer");
-            if (answer != null && !answer.isEmpty()) {
-                listener.onAnswer(answer);
-                checkCancelled();
-            }
-        } else if ("message_end".equals(type)) {
-            checkCancelled();
-            listener.onComplete();
-            return true;
-        } else if ("error".equals(type)) {
-            throw failure("对话服务返回错误");
+        String type = stringField(event, "event");
+        if (type == null) throw failure("对话事件缺少 event 类型");
+
+        // conversation_id 暂未用于连续对话；后续可在此保存首次收到的会话 ID。
+        switch (type) {
+            case "message":
+            case "agent_message":
+                String answer = stringField(event, "answer");
+                if (answer != null && !answer.isEmpty()) {
+                    listener.onAnswer(answer);
+                    checkCancelled();
+                }
+                return false;
+
+            case "node_started":
+                // 暂不展示节点进度；可从 data.title 读取节点名称。
+                return false;
+
+            case "node_finished":
+                // 暂不使用 data.title / data.process_data；节点完成不等于整个请求完成。
+                // 不追加节点中的完整文本，避免与 message 分片重复。
+                return false;
+
+            case "message_end":
+                listener.onComplete();
+                return true;
+
+            case "workflow_finished":
+                JsonElement detail = event.get("data");
+                if (detail != null && detail.isJsonObject()) {
+                    String status = stringField(detail.getAsJsonObject(), "status");
+                    if (status != null && !"succeeded".equals(status)) {
+                        throw failure("工作流未成功完成");
+                    }
+                }
+                listener.onComplete();
+                return true;
+
+            case "error":
+                // 不透传服务端 message，以免暴露简历、凭据等敏感内容。
+                throw failure("对话服务返回错误");
+
+            default:
+                // message_start、心跳等暂不处理；未知事件不追加正文，也不视为成功。
+                return false;
         }
-        // node_finished 不追加；未有文档定义的 [DONE] 不当作成功标记。
-        return false;
     }
 
     public String upload(InputStream input, String filename, String mimeType) throws IOException {

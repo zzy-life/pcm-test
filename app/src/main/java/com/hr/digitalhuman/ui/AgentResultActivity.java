@@ -1,6 +1,10 @@
 package com.hr.digitalhuman.ui;
 
 import android.content.Intent;
+import android.content.ClipData;
+import android.content.ClipboardManager;
+import android.content.Context;
+import android.widget.Toast;
 import android.content.res.ColorStateList;
 import android.net.Uri;
 import android.os.Bundle;
@@ -36,8 +40,8 @@ import io.noties.markwon.ext.strikethrough.StrikethroughPlugin;
 import io.noties.markwon.ext.tables.TablePlugin;
 
 /**
- * 输入页授权后的独立结果页。密钥仅由 AgentDefinition / BuildConfig 获取。
- * 网络、Markdown 解析分离；旋转只恢复有限结果，不隐式重复授权或请求。
+ * 输入页开始分析后的独立结果页。密钥仅由 AgentDefinition / BuildConfig 获取。
+ * 网络、Markdown 解析分离；旋转只恢复有限结果，不隐式重复请求。
  */
 public final class AgentResultActivity extends AppCompatActivity {
     public static final String EXTRA_SOURCE = "source";
@@ -49,7 +53,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     private static final int MAX_INPUT = 50000, MAX_OUTPUT = 200000, MAX_SAVED = 16000;
     private static final long RENDER_DELAY_MS = 250;
     private static final String NETWORK_ERROR =
-            "请求失败或流中断，未确认完成。请检查网络、密钥权限和文件（最多 50MB），确认授权后重试。";
+            "请求失败或流中断，未确认完成。请检查网络、密钥权限和文件（最多 50MB），重试。";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     // cancel 另起短生命周期线程，不能排在被阻塞的网络任务之后。
@@ -108,7 +112,7 @@ public final class AgentResultActivity extends AppCompatActivity {
             }
             scheduleRender();
         } else if (!invalid) {
-            // 唯一自动启动入口：输入页已经展示并取得本次授权。
+            // 首次进入自动启动；重建页面不重复发送请求。
             startRequest();
         }
         updateButtons();
@@ -122,7 +126,10 @@ public final class AgentResultActivity extends AppCompatActivity {
         LinearLayout top = new LinearLayout(this);
         Button back = button("返回编辑");
         stop = button("停止");
-        retry = button("授权并重试");
+        retry = button("重试");
+        Button copy = button("复制 Markdown");
+        copy.setOnClickListener(v -> copyMarkdown());
+        top.addView(copy, new LinearLayout.LayoutParams(0, -2, 1.4f));
         top.addView(back, new LinearLayout.LayoutParams(0, -2, 1));
         top.addView(stop, new LinearLayout.LayoutParams(0, -2, 1));
         top.addView(retry, new LinearLayout.LayoutParams(0, -2, 1.4f));
@@ -146,12 +153,10 @@ public final class AgentResultActivity extends AppCompatActivity {
         root.addView(scroll, new LinearLayout.LayoutParams(-1, 0, 1));
         latest = button("回到最新");
         root.addView(latest, new LinearLayout.LayoutParams(-1, -2));
-        root.addView(UiDecor.subtitle(this,
-                "重试会将所选简历及所需输入发送至智能体服务，并替换当前结果。仅提交已获授权的资料。链接与外部资源加载已禁用。"));
         scroll.setFollowListener(following -> latest.setVisibility(following ? View.GONE : View.VISIBLE));
         latest.setOnClickListener(v -> scroll.returnToLatest());
         back.setOnClickListener(v -> finish());
-        stop.setOnClickListener(v -> stopRequest("已停止；保留当前 Markdown 结果，可返回编辑或授权并重试。"));
+        stop.setOnClickListener(v -> stopRequest("已停止；保留当前 Markdown 结果，可返回编辑或重试。"));
         retry.setOnClickListener(v -> startRequest());
         setContentView(root);
     }
@@ -241,13 +246,13 @@ public final class AgentResultActivity extends AppCompatActivity {
                     } else uploaded = requestClient.uploadResume(token);
                     synchronized (lock) {
                         if (!isCurrent(id)) return;
-                        cachedCosKey = uploaded; // 同页面不可变资料、同 agent；可用于已授权重试。
+                        cachedCosKey = uploaded; // 同页面不可变资料、同 agent；可用于重试。
                     }
                 }
                 if (!isCurrent(id)) return;
                 JsonObject body = definition.buildRequest(type, jd, title,
                         source == TEXT ? resume : "", source == TEXT ? "" : uploaded);
-                main.post(() -> { if (isCurrent(id)) status.setText("正在分析，结果持续更新…"); });
+                main.post(() -> { if (isCurrent(id) && running) status.setText("正在分析，结果持续更新…"); });
                 requestClient.stream(body, new AgentApiClient.Listener() {
                     @Override public void onAnswer(String chunk) {
                         synchronized (lock) {
@@ -266,7 +271,7 @@ public final class AgentResultActivity extends AppCompatActivity {
                         scheduleRender();
                     }
                     @Override public void onComplete() {
-                        // 只有 AgentApiClient 验证 message_end 才能成功，EOF 不算完成。
+                        // 客户端验证 message_end / workflow_finished 后完成，普通 EOF 不算完成。
                         main.post(() -> finishRequest(id, "分析完成"));
                     }
                 });
@@ -382,7 +387,7 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         // 立即冻结当前结果，避免旋转保存之后仍接收但未保存的分片。
-        if (running) stopRequest("页面已重建，原请求已中止；保留部分结果，请确认授权并重试。");
+        if (running) stopRequest("页面已重建，原请求已中止；保留部分结果，请确认重试。");
         super.onSaveInstanceState(state);
         synchronized (lock) {
             state.putString("answer", answer.substring(0, safeEnd(answer, MAX_SAVED)));
@@ -403,6 +408,23 @@ public final class AgentResultActivity extends AppCompatActivity {
         parser.shutdownNow();
         // 不等待线程退出、不在主线程 disconnect/close；解析迟到结果由 generation 隔离。
         super.onDestroy();
+    }
+
+    private void copyMarkdown() {
+        final String markdown;
+        synchronized (lock) { markdown = answer.toString(); }
+        if (markdown.isEmpty()) {
+            Toast.makeText(this, "暂无可复制的内容", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+        try {
+            // 复制 SSE 累积的原始正文，不取渲染后 TextView 的文本。
+            clipboard.setPrimaryClip(ClipData.newPlainText("Markdown", markdown));
+            Toast.makeText(this, "已复制 Markdown 原文", Toast.LENGTH_SHORT).show();
+        } catch (RuntimeException e) {
+            Toast.makeText(this, "复制失败，请稍后重试", Toast.LENGTH_SHORT).show();
+        }
     }
 
     private void updateButtons() {

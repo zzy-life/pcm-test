@@ -120,9 +120,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
-        inputs.addView(UiDecor.subtitle(this,
-                "点击开始或重试，即授权将所选简历及本次智能体所需输入发送至智能体服务。请勿提交未经授权的个人资料。"));
-        begin = button("授权并开始");
+        begin = button("开始");
         inputs.addView(begin);
         begin.setOnClickListener(v -> startRequest());
         status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示 Markdown 分析结果。");
@@ -218,7 +216,7 @@ public class AgentStreamActivity extends AppCompatActivity {
                 + (recordId == null ? "" : "（记录 " + recordId + "）")
                 + "；开始后下载 PDF 并上传，不以虚构简历替代。");
         else if (mode == COS) fileInfo.setText("仅接受已上传的 cos_key；不要填写下载 token 或公网 URL。");
-        else fileInfo.setText("编辑正文；含“虚构示例”的内容仅用于演示，请替换为授权资料。");
+        else fileInfo.setText("编辑正文；含“虚构示例”的内容仅用于演示，请替换为实际简历。");
     }
 
     private void openDocument() {
@@ -251,7 +249,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         } catch (RuntimeException ignored) { /* 不输出包含 URI 的系统异常。 */ }
         source.setSelection(LOCAL);
         updateSource();
-        status.setText("文件已选择；点击开始授权上传。");
+        status.setText("文件已选择；点击开始上传并分析。");
     }
 
     private void startRequest() {
