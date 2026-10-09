@@ -9,9 +9,6 @@ import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.text.Spanned;
-import android.text.SpannableStringBuilder;
-import android.text.style.ClickableSpan;
 import android.view.View;
 import android.view.WindowManager;
 import android.widget.Button;
@@ -34,13 +31,10 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import io.noties.markwon.Markwon;
-import io.noties.markwon.ext.strikethrough.StrikethroughPlugin;
-import io.noties.markwon.ext.tables.TablePlugin;
 
 /**
  * 输入页开始分析后的独立结果页。密钥仅由 AgentDefinition / BuildConfig 获取。
- * 网络、Markdown 解析分离；旋转只恢复有限结果，不隐式重复请求。
+ * 原生网络与离线 WebView 渲染分离；旋转只恢复有限结果，不隐式重复请求。
  */
 public final class AgentResultActivity extends AppCompatActivity {
     public static final String EXTRA_SOURCE = "source";
@@ -50,33 +44,30 @@ public final class AgentResultActivity extends AppCompatActivity {
     public static final String EXTRA_MIME = "mime";
     private static final int TEXT = 0, LOCAL = 1, COS = 2, HISTORY = 3;
     private static final int MAX_INPUT = 50000, MAX_OUTPUT = 200000, MAX_SAVED = 16000;
-    private static final long RENDER_DELAY_MS = 250;
+    private static final long RENDER_DELAY_MS = 50;
     private static final String NETWORK_ERROR =
             "请求失败或流中断，未确认完成。请检查网络、密钥权限和文件（最多 50MB），重试。";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     // cancel 另起短生命周期线程，不能排在被阻塞的网络任务之后。
     private final ExecutorService network = Executors.newSingleThreadExecutor();
-    private final ExecutorService parser = Executors.newSingleThreadExecutor();
     private final Object lock = new Object();
-    // 单飞跨越后台解析与主线程应用整个周期，同一 Markwon 实例不会并发调用。
+    // 原文始终保留在原生层，WebView 仅负责显示。
     private final StringBuilder answer = new StringBuilder();
     private volatile long generation;
     private volatile boolean destroyed;
-    private boolean running, invalid, dirty, parseInFlight, renderPosted, savedTruncated;
+    private boolean running, invalid, dirty, renderPosted, savedTruncated;
     private AgentApiClient client;
     private Future<?> networkTask;
-    private Markwon markwon;
-    private TextView status, result;
+    private TextView status;
     private Button stop, retry, latest;
-    private FollowingScrollView scroll;
+    private AgentResultWebView result;
     private AgentDefinition definition;
     private int source;
     private String type = "", resume = "", jd = "", title = "", cos = "", token = "";
     private String fileName = "resume", mime = "application/octet-stream", cacheIdentity = "";
     private String cachedCosKey = "";
     private Uri fileUri;
-    private int restoreScrollY = -1;
     private final Runnable renderTick = this::parseLatest;
 
     @Override protected void onCreate(Bundle savedInstanceState) {
@@ -84,13 +75,6 @@ public final class AgentResultActivity extends AppCompatActivity {
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         createViews();
-        // 无 HTML、图片或网络加载插件；链接完全禁用，比仅过滤 scheme 更保守。
-        // toMarkdown 在单线程后台调用，setParsedMarkdown 仅在主线程调用。
-        // 表格插件后台解析的线程亲和性未经官方源码核验；不把串行等同于线程安全保证。
-        markwon = Markwon.builder(this)
-                .usePlugin(TablePlugin.create(this))
-                .usePlugin(StrikethroughPlugin.create())
-                .build();
         readAndValidateIntent();
         if (savedInstanceState != null) {
             synchronized (lock) {
@@ -101,8 +85,8 @@ public final class AgentResultActivity extends AppCompatActivity {
                 }
                 dirty = true;
             }
-            scroll.restoreFollowing(savedInstanceState.getBoolean("following", true));
-            restoreScrollY = savedInstanceState.getInt("scroll_y", 0);
+            result.restorePosition(savedInstanceState.getBoolean("following", true),
+                    savedInstanceState.getInt("scroll_y", 0));
             if (!invalid) {
                 String message = savedInstanceState.getString("status", "已恢复结果。");
                 savedTruncated = savedInstanceState.getBoolean("truncated", false);
@@ -144,26 +128,19 @@ public final class AgentResultActivity extends AppCompatActivity {
         status = UiDecor.subtitle(this, "准备分析…");
         status.setAccessibilityLiveRegion(View.ACCESSIBILITY_LIVE_REGION_POLITE);
         root.addView(status);
-        scroll = new FollowingScrollView(this);
-        scroll.setBackgroundResource(R.drawable.bg_glass_panel);
-        scroll.setPadding(dp(16), dp(16), dp(16), dp(16));
-        result = UiDecor.title(this, "");
-        result.setTextSize(16);
-        result.setLineSpacing(dp(3), 1f);
-        result.setTextIsSelectable(true);
-        result.setAutoLinkMask(0);
-        result.setLinksClickable(false);
-        // 不让框架另存一份大文本；Bundle 只保存手动限制的 Markdown。
-        result.setSaveEnabled(false);
-        scroll.setSaveEnabled(false);
-        scroll.addView(result, new android.widget.ScrollView.LayoutParams(-1, -2));
+        result = new AgentResultWebView(this);
+        result.setFailureListener(() -> {
+            String notice = "结果渲染器加载或显示失败，请更新 Android System WebView；可复制 Markdown 原文查看。";
+            if (!destroyed && !status.getText().toString().contains(notice)) {
+                status.setText(status.getText() + "\n" + notice);
+            }
+        });
         LinearLayout.LayoutParams scrollLp = new LinearLayout.LayoutParams(-1, 0, 1);
         scrollLp.topMargin = dp(10);
-        root.addView(scroll, scrollLp);
+        root.addView(result, scrollLp);
         latest = button("回到底部");
         root.addView(latest, new LinearLayout.LayoutParams(-1, -2));
-        scroll.setFollowListener(following -> latest.setVisibility(following ? View.GONE : View.VISIBLE));
-        latest.setOnClickListener(v -> scroll.returnToLatest());
+        latest.setOnClickListener(v -> result.returnToLatest());
         back.setOnClickListener(v -> finish());
         stop.setOnClickListener(v -> stopRequest("已停止；保留当前 Markdown 结果，可返回编辑或重试。"));
         retry.setOnClickListener(v -> startRequest());
@@ -233,9 +210,7 @@ public final class AgentResultActivity extends AppCompatActivity {
             reusable = cachedCosKey;
         }
         savedTruncated = false;
-        restoreScrollY = -1;
-        result.setText("");
-        scroll.returnToLatest();
+        result.resetResult();
         client = requestClient;
         running = true;
         status.setText(source == LOCAL || source == HISTORY ? "准备资料并上传…" : "正在分析…");
@@ -301,13 +276,15 @@ public final class AgentResultActivity extends AppCompatActivity {
         networkTask = null;
         status.setText(message);
         updateButtons();
-        scheduleRender();
+        synchronized (lock) { dirty = true; }
+        main.removeCallbacks(renderTick);
+        parseLatest();
     }
 
-    /** 所有分片共用一个 250ms 定时任务；飞行中的解析只记录 dirty。 */
+    /** 50ms 合并分片，WebView 内另有单飞与 React 提交确认。 */
     private void scheduleRender() {
         synchronized (lock) {
-            if (destroyed || !dirty || parseInFlight || renderPosted) return;
+            if (destroyed || !dirty || renderPosted) return;
             renderPosted = true;
             main.postDelayed(renderTick, RENDER_DELAY_MS);
         }
@@ -315,56 +292,13 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void parseLatest() {
         final String markdown;
-        final long id;
         synchronized (lock) {
             renderPosted = false;
-            if (destroyed || parseInFlight || !dirty) return;
-            parseInFlight = true;
+            if (destroyed || !dirty) return;
             dirty = false;
-            id = generation;
             markdown = answer.toString();
         }
-        parser.execute(() -> {
-            Spanned parsed = null;
-            try {
-                SpannableStringBuilder safe = new SpannableStringBuilder(markwon.toMarkdown(markdown));
-                // Markwon LinkSpan 不一定继承 URLSpan，移除全部 ClickableSpan 才能彻底禁链接。
-                for (ClickableSpan span : safe.getSpans(0, safe.length(), ClickableSpan.class)) safe.removeSpan(span);
-                parsed = safe;
-            } catch (RuntimeException ignored) { /* 固定提示，不暴露响应或解析异常。 */ }
-            final Spanned ready = parsed;
-            if (destroyed) return;
-            main.post(() -> {
-                try {
-                    if (isCurrent(id)) {
-                        int previousY = scroll.getScrollY();
-                        boolean displayFailed = ready == null;
-                        if (ready != null) {
-                            try { markwon.setParsedMarkdown(result, ready); }
-                            catch (RuntimeException ignored) { displayFailed = true; }
-                        }
-                        if (displayFailed) {
-                            result.setText(markdown);
-                            String notice = "Markdown 显示失败，本次更新已保留为纯文本。";
-                            if (!status.getText().toString().contains(notice)) {
-                                status.setText(status.getText() + "\n" + notice);
-                            }
-                        }
-                        result.setLinksClickable(false);
-                        final int preservedY = restoreScrollY >= 0 ? restoreScrollY : previousY;
-                        restoreScrollY = -1;
-                        if (scroll.isFollowing()) scroll.onContentRendered();
-                        else result.post(() -> {
-                            if (isCurrent(id) && !scroll.isFollowing()) scroll.preserveReadingPosition(preservedY);
-                        });
-                    }
-                } finally {
-                    synchronized (lock) { parseInFlight = false; }
-                    // 旧 generation 完成也释放单飞标记；应用完成后才允许下次解析。
-                    scheduleRender();
-                }
-            });
-        });
+        result.render(markdown, running);
     }
 
     private void stopRequest(String message) {
@@ -372,7 +306,8 @@ public final class AgentResultActivity extends AppCompatActivity {
         synchronized (lock) { dirty = true; }
         status.setText(message);
         updateButtons();
-        scheduleRender();
+        main.removeCallbacks(renderTick);
+        parseLatest();
     }
 
     private void cancelNetwork() {
@@ -405,8 +340,8 @@ public final class AgentResultActivity extends AppCompatActivity {
             state.putString("cache_identity", cacheIdentity);
         }
         state.putString("status", status.getText().toString());
-        state.putBoolean("following", scroll.isFollowing());
-        state.putInt("scroll_y", scroll.getScrollY());
+        state.putBoolean("following", result.isFollowing());
+        state.putInt("scroll_y", result.readingPosition());
     }
 
     @Override protected void onDestroy() {
@@ -414,8 +349,8 @@ public final class AgentResultActivity extends AppCompatActivity {
         cancelNetwork();
         main.removeCallbacksAndMessages(null);
         network.shutdownNow();
-        parser.shutdownNow();
-        // 不等待线程退出、不在主线程 disconnect/close；解析迟到结果由 generation 隔离。
+        result.dispose();
+        // 不等待网络线程退出，迟到结果由 generation 隔离。
         super.onDestroy();
     }
 
@@ -428,7 +363,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         }
         ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
         try {
-            // 复制 SSE 累积的原始正文，不取渲染后 TextView 的文本。
+            // 复制 SSE 累积的原始正文，不从 WebView 的 HTML 反向提取。
             clipboard.setPrimaryClip(ClipData.newPlainText("Markdown", markdown));
             Toast.makeText(this, "已复制 Markdown 原文", Toast.LENGTH_SHORT).show();
         } catch (RuntimeException e) {
