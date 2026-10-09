@@ -88,6 +88,16 @@ public final class AgentResultActivity extends AppCompatActivity {
     private TextView status;
     private EditText composer;
     private Button stop, send, latest;
+    private android.widget.ImageButton microphone;
+    private boolean capturing, applyingVoice, resumed;
+    private String voiceBase = "";
+    private com.hr.digitalhuman.robot.RobotSdkBridge voiceBridge;
+    private static final int AUDIO_PERMISSION = 6102;
+    private final com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener voiceListener =
+            new com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener() {
+                public void onAsrPartial(String text) { applyVoice(text, false); }
+                public void onAsrResult(String text) { applyVoice(text, true); }
+            };
     private AgentResultWebView result;
     private JsonObject initialInputs = new JsonObject();
     private String apiKey = "", displayName = "智能体", initialQuery = "", initialMessage = "";
@@ -139,16 +149,18 @@ public final class AgentResultActivity extends AppCompatActivity {
     private void createViews() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundResource(R.drawable.bg_page);
-        root.setPadding(dp(24), dp(12), dp(24), dp(12));
+        root.setBackgroundColor(0xFF0B1523);
+        root.setPadding(dp(8), dp(6), dp(8), dp(8));
         LinearLayout top = new LinearLayout(this);
-        top.setOrientation(LinearLayout.VERTICAL);
-        top.setGravity(android.view.Gravity.RIGHT);
+        top.setOrientation(LinearLayout.HORIZONTAL);
+        top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         heading = UiDecor.title(this, "智能体 · 对话");
         heading.setTextSize(18);
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
-        top.addView(heading);
-        // 标题和操作组分行右对齐，窄屏时不会与居中标题争抢宽度。
+        heading.setSingleLine(true);
+        heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        top.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
+        // 横屏标题与操作组同线居中，保留标题空间。
         android.widget.HorizontalScrollView actionsScroll = new android.widget.HorizontalScrollView(this);
         actionsScroll.setFillViewport(true);
         actionsScroll.setHorizontalScrollBarEnabled(false);
@@ -165,13 +177,14 @@ public final class AgentResultActivity extends AppCompatActivity {
             actions.addView(action, lp);
         }
         actionsScroll.addView(actions);
-        top.addView(actionsScroll, new LinearLayout.LayoutParams(-1, -2));
+        top.addView(actionsScroll, new LinearLayout.LayoutParams(-2, dp(40)));
         root.addView(top);
 
         LinearLayout conversation = new LinearLayout(this);
         conversation.setOrientation(LinearLayout.VERTICAL);
-        UiDecor.styleCard(this, conversation);
-        conversation.setPadding(dp(8), dp(8), dp(8), dp(8));
+        conversation.setBackground(surface(0xFF121E2E, 16));
+        conversation.setPadding(dp(4), dp(4), dp(4), dp(4));
+        conversation.setClipToOutline(true);
         LinearLayout.LayoutParams conversationLp = new LinearLayout.LayoutParams(-1, 0, 1);
         conversationLp.topMargin = dp(8);
         root.addView(conversation, conversationLp);
@@ -190,11 +203,21 @@ public final class AgentResultActivity extends AppCompatActivity {
         root.addView(status);
         LinearLayout inputRow = new LinearLayout(this);
         inputRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        UiDecor.styleCard(this, inputRow);
-        inputRow.setPadding(dp(12), dp(4), dp(8), dp(4));
+        inputRow.setBackground(surface(0xFF0C1826, 24));
+        inputRow.setPadding(dp(4), dp(3), dp(4), dp(3));
+        microphone = new android.widget.ImageButton(this);
+        microphone.setImageResource(R.drawable.ic_home_mic);
+        microphone.setBackground(surface(0xFF0C1826, 20));
+        microphone.setPadding(dp(10), dp(10), dp(10), dp(10));
+        microphone.setContentDescription("开始语音输入");
+        inputRow.addView(microphone, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        microphone.setOnClickListener(v -> toggleVoice());
+        send.setBackground(surface(0xFF2F7CFF, 20));
+        send.setTextColor(0xFFFFFFFF);
         composer = new EditText(this);
         composer.setSaveEnabled(false);
-        composer.setHint("输入追问…");
+        composer.setHint("点此输入中文，或直接说话…");
+        composer.setPadding(dp(8), dp(6), dp(8), dp(6));
         composer.setTextColor(UiDecor.color(this, R.color.text));
         composer.setHintTextColor(UiDecor.color(this, R.color.text_dim));
         composer.setTextSize(16);
@@ -204,11 +227,16 @@ public final class AgentResultActivity extends AppCompatActivity {
         composer.setMaxLines(4);
         composer.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(MAX_INPUT)});
         inputRow.addView(composer, new LinearLayout.LayoutParams(0, -2, 1));
-        inputRow.addView(send);
-        root.addView(inputRow, new LinearLayout.LayoutParams(-1, -2));
+        inputRow.addView(send, new LinearLayout.LayoutParams(-2, dp(40)));
+        LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(-1, -2);
+        inputLp.topMargin = dp(6);
+        root.addView(inputRow, inputLp);
         composer.addTextChangedListener(new TextWatcher() {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
-            public void onTextChanged(CharSequence s, int start, int before, int count) { updateButtons(); }
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (capturing && !applyingVoice) endVoice();
+                updateButtons();
+            }
             public void afterTextChanged(Editable s) {}
         });
         send.setOnClickListener(v -> startRequest(composer.getText().toString().trim()));
@@ -216,6 +244,60 @@ public final class AgentResultActivity extends AppCompatActivity {
         back.setOnClickListener(v -> finish());
         stop.setOnClickListener(v -> stopRequest("已停止，保留当前回复。"));
         setContentView(root);
+    }
+
+    private void toggleVoice() {
+        if (capturing) { endVoice(); return; }
+        if (!resumed || running || invalid || destroyed) return;
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(this,
+                    new String[]{android.Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION);
+            return;
+        }
+        voiceBridge = com.hr.digitalhuman.app.DigitalHumanApp.getInstance().getRobotBridge();
+        if (voiceBridge == null || !voiceBridge.beginVoiceCapture(voiceListener)) {
+            status.setText("机器人语音暂不可用，请确认服务连接、非演示模式、未播报且有人在识别范围内。");
+            return;
+        }
+        voiceBase = composer.getText().toString();
+        capturing = true;
+        microphone.setBackground(surface(0xFF163A6B, 20));
+        microphone.setContentDescription("结束语音输入");
+        status.setText("正在聆听，识别后请确认并发送；再次点击麦克风结束。");
+    }
+
+    private void applyVoice(String text, boolean complete) {
+        if (!capturing || !resumed || destroyed || text == null || text.trim().isEmpty()) return;
+        String value = voiceBase + (voiceBase.isEmpty() || voiceBase.endsWith("\n") ? "" : "\n") + text.trim();
+        value = value.substring(0, safeEnd(value, MAX_INPUT));
+        applyingVoice = true;
+        composer.setText(value);
+        composer.setSelection(composer.length());
+        applyingVoice = false;
+        if (complete) voiceBase = value;
+    }
+
+    private void endVoice() {
+        boolean wasCapturing = capturing;
+        capturing = false;
+        if (wasCapturing && status != null) status.setText("语音输入已结束，请确认文字后发送。");
+        if (voiceBridge != null) voiceBridge.endVoiceCapture(voiceListener);
+        if (microphone != null) {
+            microphone.setBackground(surface(0xFF0C1826, 20));
+            microphone.setContentDescription("开始语音输入");
+        }
+    }
+
+    @Override protected void onResume() { super.onResume(); resumed = true; }
+    @Override protected void onPause() { resumed = false; endVoice(); super.onPause(); }
+
+    @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code == AUDIO_PERMISSION) {
+            if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) toggleVoice();
+            else status.setText("未授予麦克风权限，请使用文字输入。");
+        }
     }
 
     private void readAndValidateIntent() {
@@ -261,6 +343,7 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void startRequest(String query) {
         if (running || invalid || destroyed) return;
+        endVoice();
         final boolean first = turns == 0;
         if (query.trim().isEmpty() || query.length() > MAX_INPUT
                 || (!first && conversationId.isEmpty())) return;
@@ -406,6 +489,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     }
 
     private void cancelNetwork() {
+        endVoice();
         synchronized (lock) { ++generation; }
         AgentApiClient old = client;
         client = null;
@@ -425,6 +509,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        endVoice();
         // 立即冻结当前结果，避免旋转保存之后仍接收但未保存的分片。
         if (running) stopRequest("页面已重建，原请求已中止；保留部分回复。");
         super.onSaveInstanceState(state);
@@ -464,6 +549,7 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void updateButtons() {
         stop.setEnabled(running);
+        microphone.setEnabled(!running && !invalid && !destroyed);
         boolean available = !running && !invalid && !destroyed && (turns == 0 || !conversationId.isEmpty())
                 && turns < MAX_TURNS && totalChars < MAX_SESSION;
         send.setEnabled(available && !composer.getText().toString().trim().isEmpty());
@@ -487,10 +573,23 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private int dp(int value) { return UiDecor.dp(this, value); }
 
+    private android.graphics.drawable.GradientDrawable surface(int color, int radius) {
+        android.graphics.drawable.GradientDrawable bg = new android.graphics.drawable.GradientDrawable();
+        bg.setColor(color);
+        bg.setCornerRadius(dp(radius));
+        bg.setStroke(dp(1), 0xFF2C4464);
+        return bg;
+    }
+
     private Button button(String text) {
         Button button = UiDecor.button(this, text, false);
-        button.setTextSize(14);
-        button.setPadding(dp(16), 0, dp(16), 0);
+        button.setTextSize(13);
+        button.setMinimumWidth(0);
+        button.setMinWidth(0);
+        button.setMinimumHeight(dp(40));
+        button.setMinHeight(dp(40));
+        button.setBackground(surface(0xFF18283D, 20));
+        button.setPadding(dp(14), 0, dp(14), 0);
         return button;
     }
 }

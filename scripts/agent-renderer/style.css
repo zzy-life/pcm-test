@@ -1,6 +1,6 @@
 html { color-scheme: dark; background: #121e2e; color: #f4f7fb; font: 16px/1.65 sans-serif; overflow-wrap: anywhere; }
-body { margin: 0; padding: 8px; }
-main { display: flex; flex-direction: column; gap: 10px; }
+body { margin: 0; padding: 4px; }
+main { display: flex; flex-direction: column; gap: 6px; }
 .user-message { background: #18283d; border: 1px solid #2c4464; border-radius: 16px; padding: 10px 14px; }
 .speaker { color: #5b9bff; font-size: 13px; margin-bottom: 4px; }
 .user-text { white-space: pre-wrap; }

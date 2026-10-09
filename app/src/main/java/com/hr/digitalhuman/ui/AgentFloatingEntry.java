@@ -42,6 +42,11 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
         FrameLayout content = activity.findViewById(android.R.id.content);
         if (content == null) return;
         View existing = content.findViewWithTag(TAG);
+        // 智能体页已有自己的操作栏，浮层不能遮挡发送或开始按钮。
+        if (isAgentActivity(activity)) {
+            if (existing != null) content.removeView(existing);
+            return;
+        }
         if (existing != null) {
             existing.bringToFront();
             return;

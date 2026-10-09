@@ -74,7 +74,10 @@ public class RobotSdkBridge {
     private int activeWaitAttempts;
     private String sn;
     private boolean readyNotified;
-    private SpeechTextListener speechTextListener;
+    private volatile SpeechTextListener speechTextListener;
+    // 临时采集独立于默认页面；状态快照及代次变更使用同一把锁。
+    private volatile SpeechTextListener voiceCaptureListener;
+    private volatile long voiceCaptureGeneration;
     private ListeningPolicy listeningPolicy;
     private PersonPresenceTracker presenceTracker;
     private RobotConfig.TtsConfig ttsConfig;
@@ -99,6 +102,47 @@ public class RobotSdkBridge {
 
     public void setSpeechTextListener(SpeechTextListener listener) {
         this.speechTextListener = listener;
+    }
+
+    /**
+     * 在主线程开始临时采集；返回 true 才表示识别已开启。
+     * 同一监听器可重复调用，其他监听器不能抢占；不会替换默认页面监听器。
+     */
+    public boolean beginVoiceCapture(SpeechTextListener listener) {
+        if (Looper.myLooper() != Looper.getMainLooper() || listener == null) {
+            return false;
+        }
+        synchronized (this) {
+            if (voiceCaptureListener != null && voiceCaptureListener != listener) {
+                return false;
+            }
+            if (!isChassisReady() || !isSkillConnected() || !allowVoiceInput("capture")) {
+                return false;
+            }
+            if (voiceCaptureListener == null) {
+                voiceCaptureGeneration++;
+                voiceCaptureListener = listener;
+            }
+            enableListening();
+            if (!isRecognizable()) {
+                // 开麦失败也结束本代次，防止已排队的结果泄漏到默认页面。
+                endVoiceCapture(listener);
+                return false;
+            }
+            return true;
+        }
+    }
+
+    /** 仅释放当前采集者；先使排队回调失效，再关闭识别，不恢复默认页面拾音。 */
+    public void endVoiceCapture(SpeechTextListener listener) {
+        synchronized (this) {
+            if (listener == null || voiceCaptureListener != listener) {
+                return;
+            }
+            voiceCaptureGeneration++;
+            voiceCaptureListener = null;
+            disableListening();
+        }
     }
 
     public void setListeningPolicy(ListeningPolicy policy) {
@@ -232,9 +276,15 @@ public class RobotSdkBridge {
      * 必须同时：onForeground + setRecognizable(true) + setRecognizeMode(true)。
      * 系统设置「语音识别」「持续拾音」也需开启，否则接口不生效。
      */
-    public void enableListening() {
+    public synchronized void enableListening() {
         try {
-            if (listeningPolicy != null && !listeningPolicy.shouldListen()) {
+            if (voiceCaptureListener != null
+                    && (!isChassisReady() || !allowVoiceInput("listening"))) {
+                disableListening();
+                return;
+            }
+            if (voiceCaptureListener == null
+                    && listeningPolicy != null && !listeningPolicy.shouldListen()) {
                 disableListening();
                 return;
             }
@@ -711,7 +761,7 @@ public class RobotSdkBridge {
     /**
      * @param source asr=SkillCallback最终结果；nlp=ModuleCallback；手动去重避免双通道重复发送
      */
-    public void dispatchAsr(String text, String source) {
+    public synchronized void dispatchAsr(String text, String source) {
         if (text == null || text.trim().isEmpty() || !allowVoiceInput("asr")) {
             return;
         }
@@ -726,19 +776,47 @@ public class RobotSdkBridge {
             lastAsrText = trimmed;
             lastAsrAt = now;
         }
-        if (speechTextListener != null) {
-            mainHandler.post(() -> speechTextListener.onAsrResult(trimmed));
-        } else {
-            DebugLog.w(TAG, "speechTextListener is null, ASR dropped");
-        }
+        postSpeechText(trimmed, false);
     }
 
-    public void dispatchAsrPartial(String text) {
-        if (speechTextListener == null || text == null || !allowVoiceInput("partial")) {
+    public synchronized void dispatchAsrPartial(String text) {
+        if (text == null || !allowVoiceInput("partial")) {
             return;
         }
-        final String t = text;
-        mainHandler.post(() -> speechTextListener.onAsrPartial(t));
+        postSpeechText(text, true);
+    }
+
+    private void postSpeechText(String text, boolean partial) {
+        final SpeechTextListener target;
+        final long generation;
+        final boolean temporary;
+        synchronized (this) {
+            temporary = voiceCaptureListener != null;
+            target = temporary ? voiceCaptureListener : speechTextListener;
+            generation = voiceCaptureGeneration;
+        }
+        if (target == null) {
+            if (!partial) {
+                DebugLog.w(TAG, "speechTextListener is null, ASR dropped");
+            }
+            return;
+        }
+        mainHandler.post(() -> {
+            synchronized (RobotSdkBridge.this) {
+                // 开始/结束/失败回滚都会推进代次；旧结果绝不重新路由到默认页面。
+                if (generation != voiceCaptureGeneration
+                        || (temporary ? voiceCaptureListener != target
+                        : voiceCaptureListener != null || speechTextListener != target)
+                        || !allowVoiceInput(partial ? "partial" : "asr")) {
+                    return;
+                }
+                if (partial) {
+                    target.onAsrPartial(text);
+                } else {
+                    target.onAsrResult(text);
+                }
+            }
+        });
     }
 
     private boolean allowVoiceInput(String source) {
