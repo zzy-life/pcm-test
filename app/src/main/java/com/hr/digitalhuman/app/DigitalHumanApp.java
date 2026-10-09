@@ -12,6 +12,7 @@ import com.hr.digitalhuman.robot.AppSpeechCallback;
 import com.hr.digitalhuman.robot.RobotSdkBridge;
 import com.hr.digitalhuman.state.RobotStateMachine;
 import com.hr.digitalhuman.ui.DisplayDensityHelper;
+import com.hr.digitalhuman.ui.AgentFloatingEntry;
 
 public class DigitalHumanApp extends Application {
 
@@ -25,6 +26,7 @@ public class DigitalHumanApp extends Application {
     private AppSpeechCallback speechCallback;
     private ApiService apiService;
     private RemoteLogSink remoteLogSink;
+    private final AgentFloatingEntry agentFloatingEntry = new AgentFloatingEntry();
 
     @Override
     protected void attachBaseContext(Context base) {
@@ -36,6 +38,7 @@ public class DigitalHumanApp extends Application {
     public void onCreate() {
         super.onCreate();
         instance = this;
+        registerActivityLifecycleCallbacks(agentFloatingEntry);
         DisplayDensityHelper.apply(this);
         sessionStore = new SessionStore(this);
         stateMachine = new RobotStateMachine();
@@ -61,6 +64,10 @@ public class DigitalHumanApp extends Application {
 
     public static DigitalHumanApp getInstance() {
         return instance;
+    }
+
+    public boolean isAgentPageVisible() {
+        return agentFloatingEntry.isAgentPageVisible();
     }
 
     public SessionStore getSessionStore() {

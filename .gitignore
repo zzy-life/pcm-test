@@ -117,3 +117,4 @@ sentry.properties
 # .svn/
 # .hg/
 # .git/
+/.claude

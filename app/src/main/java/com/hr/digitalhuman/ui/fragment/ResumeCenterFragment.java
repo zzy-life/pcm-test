@@ -36,6 +36,7 @@ import com.hr.digitalhuman.model.ApiResponse;
 import com.hr.digitalhuman.model.UserInfo;
 import com.hr.digitalhuman.model.agent.DisplaySection;
 import com.hr.digitalhuman.ui.MainActivity;
+import com.hr.digitalhuman.ui.AgentStreamActivity;
 import com.hr.digitalhuman.ui.UiDecor;
 import com.hr.digitalhuman.ui.display.DisplayCanvas;
 import com.hr.digitalhuman.ui.display.ResumePdfViewer;
@@ -915,6 +916,13 @@ public class ResumeCenterFragment extends Fragment {
                             openRecordDetail(token, qrTitle);
                         } : null);
                 hubContainer.addView(row);
+                // 复用真实下载凭据，不把历史简历替换成页面中的示例。
+                if ((downloadable || "3".equals(st)) && token != null && !token.isEmpty()) {
+                    TextView analyze = UiDecor.chip(requireContext(), "智能体分析 · " + displayName);
+                    analyze.setOnClickListener(v -> AgentStreamActivity.startWithResume(
+                            requireContext(), token, displayName, pos, recordId));
+                    hubContainer.addView(analyze);
+                }
             }
         }
 

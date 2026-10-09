@@ -8,6 +8,10 @@ if (localPropsFile.exists()) {
 }
 // 机器人与电脑同网段时，可在 local.properties 设置 api.base.url=http://电脑IP:8610/jqrserv/api
 def apiBaseUrl = localProps.getProperty('api.base.url', 'http://xxx')
+// 内部演示配置：密钥会进入 APK，正式分发应通过后端代理调用。
+def javaString = { String value -> groovy.json.JsonOutput.toJson(value) }
+def careerKey = localProps.getProperty('agents.career.api.key', '')
+def diagnosisKey = localProps.getProperty('agents.resume.diagnosis.api.key', '')
 
 android {
     // android-pdf-viewer 传递依赖 androidx.core:1.7.0 要求 compileSdk ≥ 31
@@ -21,6 +25,8 @@ android {
         versionCode 3
         versionName "2.0.0"
         buildConfigField "String", "API_BASE_URL", "\"${apiBaseUrl}\""
+        buildConfigField "String", "AGENTS_CAREER_API_KEY", javaString(careerKey)
+        buildConfigField "String", "AGENTS_RESUME_DIAGNOSIS_API_KEY", javaString(diagnosisKey)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // 猎户星空机器人多为 arm；裁剪 abi 减小包体

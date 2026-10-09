@@ -66,6 +66,8 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     private boolean ignoreVoiceForThinking;
     private String pendingNavTarget;
     private boolean navFinished;
+    private boolean agentPagePaused;
+    private boolean standbyPendingAfterAgent;
     /** 回到待机必须同时满足：距上次点击超过此时长，且 1.5 米内无人。 */
     private static final long STANDBY_AFTER_CLICK_MS = 20_000L;
     private long lastClickAt = System.currentTimeMillis();
@@ -145,7 +147,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
         bridge.setTtsStateListener(this::updateStopSpeakButton);
         // 开麦策略：演示模式、思考中、播报中、视野内无人或超出配置距离时关麦
         bridge.setListeningPolicy(() -> {
-            if (store.isDemoMode() || speaking || bridge.isTtsPlaying() || isThinkingPhase()) {
+            if (app.isAgentPageVisible() || store.isDemoMode() || speaking || bridge.isTtsPlaying() || isThinkingPhase()) {
                 return false;
             }
             ResumeCenterFragment resume = currentResumeCenter();
@@ -350,6 +352,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
      * 思考中、播报中、简历采集未点「语音讲话」时同样忽略。
      */
     private boolean shouldProcessVoice() {
+        if (app.isAgentPageVisible()) return false;
         if (store != null && store.isDemoMode()) {
             return false;
         }
@@ -456,6 +459,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
      * 播报/思考/迎宾不永久拦住：人已离开且点击已满 20 秒时停播并回待机。
      */
     private void requestStandby(String reason) {
+        if (app.isAgentPageVisible()) return;
         RobotState state = fsm.getState();
         if (state == RobotState.STANDBY || state == RobotState.INIT || state == RobotState.SUSPENDED) {
             return;
@@ -515,6 +519,10 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     }
 
     public void enterStandby() {
+        if (app.isAgentPageVisible()) {
+            standbyPendingAfterAgent = true;
+            return;
+        }
         // 回待机时一律停播，避免离开后仍继续说话
         speaking = false;
         if (toolRuntime != null) {
@@ -566,12 +574,14 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     protected void onResume() {
         super.onResume();
         bridge.notifyForeground();
+        scheduleStandbyRecheck();
         if (fsm.getState() == RobotState.STANDBY) {
             startFocusFollowMonitoring();
         }
     }
 
     private void startFocusFollowMonitoring() {
+        if (app.isAgentPageVisible()) return;
         focusFollowController.start(new com.hr.digitalhuman.robot.FocusFollowController.Callback() {
             @Override
             public void onFollowingChanged(boolean following) {
@@ -598,6 +608,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     }
 
     public void triggerWelcome(String personId) {
+        if (app.isAgentPageVisible()) return;
         if (!fsm.canAcceptPersonApproach()) {
             DebugLog.w("MainActivity", "welcome blocked: state=" + fsm.getState());
             return;
@@ -633,7 +644,9 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
             if (resp.isOk() && resp.data != null) {
                 store.setSessionId(resp.data.sessionId);
             }
-            mainHandler.post(this::enterHome);
+            mainHandler.post(() -> {
+                if (!app.isAgentPageVisible()) enterHome();
+            });
         });
     }
 
@@ -862,6 +875,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     }
 
     private void speakLocal(String text) {
+        if (app.isAgentPageVisible()) return;
         bridge.playTts(text, null);
         ResumeCenterFragment resume = currentResumeCenter();
         if (resume != null) {
@@ -961,6 +975,10 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
 
     @Override
     public void speak(String text, float rate, boolean interrupt, RobotToolRuntime.SpeakCallback callback) {
+        if (app.isAgentPageVisible()) {
+            if (callback != null) callback.onError("智能体页面使用中，机器人播报已暂停");
+            return;
+        }
         if (interrupt) {
             interruptSpeaking("tool_interrupt");
         }
@@ -1134,6 +1152,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
         }
         onUserInteraction();
         mainHandler.post(() -> {
+            if (app.isAgentPageVisible()) return;
             switch (page) {
                 case "login":
                 case "open_login":
@@ -1309,6 +1328,35 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
         showFragment(f, true);
     }
 
+    /** 通用智能体页面不使用机器人语音，复用现有业务中断流程。 */
+    public void prepareForAgentPage() {
+        agentPagePaused = true;
+        // 新页面遮挡导航取消按钮前，先停止底盘；中断工具链本身并不会停止导航。
+        if (isNavigating()) cancelNavigation();
+        abortHomeSpeechAndAgent("open_agent_page");
+        bridge.disableListening();
+        mainHandler.removeCallbacks(standbyRecheck);
+        stopFocusFollowMonitoring();
+    }
+
+    public void restoreAfterAgentPage() {
+        if (!agentPagePaused || app.isAgentPageVisible()) return;
+        agentPagePaused = false;
+        if (standbyPendingAfterAgent) {
+            standbyPendingAfterAgent = false;
+            enterStandby();
+        }
+        if (fsm.getState() == RobotState.WELCOME) enterHome();
+        if (fsm.getState() == RobotState.LISTENING) {
+            fsm.transition(RobotState.HOME, "return_from_agent_page");
+        }
+        noteClick();
+        if (fsm.getState() == RobotState.STANDBY || fsm.getState() == RobotState.HOME) {
+            startFocusFollowMonitoring();
+        }
+        bridge.resumeListeningAfterPause();
+    }
+
     /** 离开首页业务页时：停 TTS、取消字幕、打断 Agent 多步工具链 */
     private void abortHomeSpeechAndAgent(String reason) {
         speaking = false;
@@ -1352,6 +1400,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
 
     /** 简历中心开场/提示播报（先停掉可能残留的首页 TTS） */
     public void speakResumeHint(String text) {
+        if (app.isAgentPageVisible()) return;
         if (text == null || text.trim().isEmpty()) {
             return;
         }

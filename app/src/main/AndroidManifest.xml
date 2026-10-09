@@ -44,6 +44,12 @@
             android:screenOrientation="landscape"
             android:theme="@style/AppTheme" />
 
+        <activity
+            android:name=".ui.AgentStreamActivity"
+            android:exported="false"
+            android:theme="@style/AppTheme"
+            android:windowSoftInputMode="adjustResize" />
+
         <provider
             android:name="androidx.core.content.FileProvider"
             android:authorities="${applicationId}.fileprovider"
