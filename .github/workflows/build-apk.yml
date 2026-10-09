@@ -32,6 +32,9 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # 覆盖默认 tools platform-tools，避免安装已下架的旧 tools 包。
+          packages: 'platform-tools'
 
       - name: Install Android SDK packages
         run: sdkmanager 'platforms;android-31' 'build-tools;30.0.3'
