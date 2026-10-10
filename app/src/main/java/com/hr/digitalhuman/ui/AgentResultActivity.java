@@ -485,7 +485,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         status.setText(message);
         updateButtons();
         synchronized (lock) {
-            if (activeReply != null) activeReply.state = message;
+            if (activeReply != null) activeReply.state = sseCompleted ? "" : message;
             dirty = true;
         }
         main.removeCallbacks(renderTick);
@@ -528,7 +528,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         main.postDelayed(deadline, pollTimeoutMs);
         reportTask = network.submit(() -> {
             try {
-                String json = request.fetchReportJson(target, pollTimeoutMs);
+                String report = request.fetchReportResult(target, pollTimeoutMs);
                 main.post(() -> {
                     if (!isCurrentReport(id, attempt)) return;
                     main.removeCallbacks(deadline);
@@ -538,19 +538,19 @@ public final class AgentResultActivity extends AppCompatActivity {
                     }
                     reportClient = null;
                     reportTask = null;
-                    if (json != null) {
+                    if (report != null) {
                         try {
                             android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
                                     getSystemService(Context.CLIPBOARD_SERVICE);
-                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("智能体结果 JSON", json));
-                            finishReport("结果 JSON 已复制到剪贴板，包含简历个人信息，请谨慎粘贴。");
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("智能体结果", report));
+                            finishReport("结果已复制到剪贴板，可能包含个人信息，请谨慎粘贴。");
                         } catch (RuntimeException e) {
                             finishReport("结果复制失败，可再次点击“获取结果”。");
                         }
                     } else if (attempt >= pollAttempts) {
-                        finishReport("已达到最大轮询次数，JSON 暂未生成，可再次点击“获取结果”。");
+                        finishReport("已达到最大轮询次数，报告内容暂未生成，可再次点击“获取结果”。");
                     } else {
-                        status.setText("JSON 暂未生成，等待下一次查询（" + attempt + "/" + pollAttempts + "）。");
+                        status.setText("报告内容暂未生成，等待下一次查询（" + attempt + "/" + pollAttempts + "）。");
                         main.postDelayed(pollNext, pollIntervalMs);
                     }
                 });

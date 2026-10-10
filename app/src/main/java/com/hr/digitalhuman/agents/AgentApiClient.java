@@ -194,8 +194,8 @@ public final class AgentApiClient {
         }
     }
 
-    /** null 表示报告/JSON 尚未生成；其他失败交由调用方提示并允许重试。 */
-    public String fetchReportJson(String conversationId, int timeoutMs) throws IOException {
+    /** 优先返回解码后的 JSON，否则返回 content；null 表示报告内容尚未生成。 */
+    public String fetchReportResult(String conversationId, int timeoutMs) throws IOException {
         begin();
         try {
             if (conversationId == null || !conversationId.matches("[A-Za-z0-9-]{1,256}")) {
@@ -228,7 +228,13 @@ public final class AgentApiClient {
             String returnedId = stringField(data.getAsJsonObject(), "conversation_id");
             if (!conversationId.equals(returnedId)) throw failure("报告会话 ID 不一致");
             String encoded = stringField(data.getAsJsonObject(), "json_base64");
-            if (encoded == null || encoded.trim().isEmpty() || "null".equals(encoded.trim())) return null;
+            if (encoded == null || encoded.trim().isEmpty() || "null".equals(encoded.trim())) {
+                String content = stringField(data.getAsJsonObject(), "content");
+                if (content == null || content.trim().isEmpty()) return null;
+                if (content.length() > 100000) throw failure("报告内容超过复制上限");
+                checkCancelled();
+                return content;
+            }
             byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
             String json = UTF8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
                     .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
