@@ -154,7 +154,9 @@ public final class AgentResultActivity extends AppCompatActivity {
             result.restorePosition(savedInstanceState.getBoolean("following", true),
                     savedInstanceState.getInt("scroll_y", 0));
             if (!invalid) {
-                String message = savedInstanceState.getString("status", "已恢复结果。");
+                String message = savedInstanceState.getBoolean("request_active", false)
+                        ? "页面已重建，原请求已结束；保留已保存的回复。"
+                        : savedInstanceState.getString("status", "已恢复结果。");
                 savedTruncated = savedInstanceState.getBoolean("truncated", false);
                 String notice = "恢复结果仅保留前 16000 字符，其余内容未保存。";
                 status.setText(message + (savedTruncated && !message.contains(notice)
@@ -648,13 +650,8 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     @Override protected void onSaveInstanceState(Bundle state) {
         endVoice();
-        // 立即冻结当前结果，避免旋转保存之后仍接收但未保存的分片。
-        if (running) stopRequest("页面已重建，原请求已中止；保留部分回复。");
-        if (polling) {
-            cancelReportPolling();
-            status.setText("页面状态已保存，结果查询已取消，可再次点击“获取结果”。");
-            updateButtons();
-        }
+        // 保存快照不代表页面已销毁，切后台时继续接收 SSE 和查询结果。
+        state.putBoolean("request_active", running || polling);
         super.onSaveInstanceState(state);
         state.putBoolean("sse_completed", sseCompleted);
         synchronized (lock) {
