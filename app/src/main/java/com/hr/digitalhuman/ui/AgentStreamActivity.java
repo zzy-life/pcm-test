@@ -48,12 +48,16 @@ public class AgentStreamActivity extends AppCompatActivity {
     private static final int PICK_FILE = 6101;
     private static final int MAX_INPUT_CHARS = 50000;
     private boolean invalidParameters;
-    private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2, HISTORY = 3;
+    private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2, HISTORY = 3, NONE = 4;
+    private static final AgentDefinition[] AGENTS = {AgentDefinition.CAREER_AGENT,
+            AgentDefinition.DIAGNOSIS_AGENT, AgentDefinition.OPTIMIZATION_AGENT, AgentDefinition.INTERVIEW_AGENT};
     private static final String SAMPLE_JD = "【虚构示例 JD，请替换】招聘 Java 后端工程师，负责业务接口开发与数据库优化，要求熟悉 Java、SQL 和团队协作。";
     private static final String SAMPLE_RESUME = "【虚构示例简历，请替换】示例候选人：3 年 Java 后端开发经验，参与订单系统接口开发、SQL 优化及自动化测试。以上经历均为虚构。";
 
     private Spinner agent, source, careerType;
-    private EditText jd, jobTitle, resume, fileUrl;
+    private EditText jd, jobTitle, resume, fileUrl, questionNumber;
+    private Spinner interviewRole, referenceAnswer;
+    private LinearLayout interviewSettings;
     private TextView status, fileInfo, agentHint;
     private Button begin, choose, cancel;
     private final ExecutorService preparationExecutor = Executors.newCachedThreadPool();
@@ -139,14 +143,26 @@ public class AgentStreamActivity extends AppCompatActivity {
             panels.addView(inputScroll, lp);
         }
         label(settings, "选择智能体");
-        agent = spinner(settings, "职业规划", "简历诊断");
+        String[] names = new String[AGENTS.length];
+        for (int i = 0; i < AGENTS.length; i++) names[i] = AGENTS[i].name;
+        agent = spinner(settings, names);
         agentHint = UiDecor.subtitle(this, "");
         settings.addView(agentHint);
         careerType = spinner(settings, "晋升路径", "转型建议");
         jobTitle = editor(settings, "职位标题（可选，不等于 JD）", 1);
-        jd = editor(settings, "职位 JD（简历诊断必填）", 4);
+        jd = editor(settings, "职位 JD", 4);
+        interviewSettings = column();
+        settings.addView(interviewSettings);
+        label(interviewSettings, "面试题数（默认 5）");
+        questionNumber = editor(interviewSettings, "5–15 题，留空默认 5", 1);
+        questionNumber.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
+        questionNumber.setText("5");
+        label(interviewSettings, "面试类型");
+        interviewRole = spinner(interviewSettings, "HR综合面试", "专业面试");
+        label(interviewSettings, "参考答案");
+        referenceAnswer = spinner(interviewSettings, "不生成参考答案", "生成参考答案");
         label(inputs, "简历来源（只发送所选来源）");
-        source = spinner(inputs, "编辑简历文本", "本地文件", "公网URL文件", "历史简历下载凭据");
+        source = spinner(inputs, "编辑简历文本", "本地文件", "公网URL文件", "历史简历下载凭据", "不提供简历（仅模拟面试）");
         resume = editor(inputs, "简历正文", 5);
         fileUrl = editor(inputs, "公网文件完整 URL（http/https，不是下载 token）", 2);
         choose = button("选择本地文件（最多 50MB）");
@@ -165,7 +181,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             cancelPreparation();
             status.setText("已取消准备，可修改资料后重新开始。");
         });
-        status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示 Markdown 分析结果。");
+        status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示结果或进行面试问答。");
         inputs.addView(status);
         setContentView(root);
     }
@@ -173,10 +189,16 @@ public class AgentStreamActivity extends AppCompatActivity {
     private void readIntent() {
         Intent i = getIntent();
         String id = i.getStringExtra(EXTRA_AGENT_ID);
-        if (AgentDefinition.RESUME_DIAGNOSIS.equals(id)) agent.setSelection(1);
-        else if (id != null && !AgentDefinition.CAREER.equals(id)) {
-            invalidParameters = true;
-            status.setText("不支持的智能体 ID，请返回并传入 career 或 resume_diagnosis。");
+        if (id != null) {
+            try {
+                AgentDefinition definition = AgentDefinition.fromId(id);
+                for (int p = 0; p < AGENTS.length; p++) {
+                    if (AGENTS[p] == definition) agent.setSelection(p);
+                }
+            } catch (IllegalArgumentException e) {
+                invalidParameters = true;
+                status.setText("不支持的智能体 ID，请返回并选择受支持的智能体。");
+            }
         }
         for (String name : new String[]{EXTRA_RESUME_CONTENT, EXTRA_JOB_INFO, EXTRA_JOB_TITLE, EXTRA_FILE_URL}) {
             String value = i.getStringExtra(name);
@@ -242,10 +264,22 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void updateAgent() {
-        boolean career = agent.getSelectedItemPosition() == 0;
+        AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
+        boolean career = definition == AgentDefinition.CAREER_AGENT;
+        boolean interview = definition == AgentDefinition.INTERVIEW_AGENT;
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);
-        agentHint.setText(career ? "职业规划不发送 JD 或职位标题；JD 仅保留供切换诊断使用。"
-                : "简历诊断必须填写完整 JD；职位标题仅为可选补充。未知职位请勿使用示例替代。");
+        interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
+        jobTitle.setVisibility(definition == AgentDefinition.DIAGNOSIS_AGENT || interview ? View.VISIBLE : View.GONE);
+        jd.setVisibility(career ? View.GONE : View.VISIBLE);
+        if (career) agentHint.setText("职业规划不发送 JD 或职位标题；资料保留供切换智能体使用。");
+        else if (definition == AgentDefinition.OPTIMIZATION_AGENT) {
+            jd.setHint("职位 JD（可选，填写后针对岗位优化）");
+            agentHint.setText("直接改写简历；不填 JD 为通用优化，填写后针对岗位优化。简历必填。");
+        } else {
+            jd.setHint("职位 JD（必填，职位标题不能替代）");
+            agentHint.setText(interview ? "填写真实 JD 后开始面试，简历可选；在结果页回答问题，可使用语音转文字。"
+                    : "简历诊断必须填写完整 JD；职位标题仅为可选补充。未知职位请勿使用示例替代。");
+        }
     }
 
     private void updateSource() {
@@ -260,6 +294,7 @@ public class AgentStreamActivity extends AppCompatActivity {
                 + (recordId == null ? "" : "（记录 " + recordId + "）")
                 + "；开始后下载 PDF 并上传，不以虚构简历替代。");
         else if (mode == URL_FILE) fileInfo.setText("使用可公开访问的 http/https 完整文件 URL；不接受本机、私网或下载 token。");
+        else if (mode == NONE) fileInfo.setText("仅模拟面试可不提供简历；只按职位 JD 和面试设置提问。");
         else fileInfo.setText("编辑正文；含“虚构示例”的内容仅用于演示，请替换为实际简历。");
     }
 
@@ -299,8 +334,7 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void startRequest() {
         if (invalidParameters || preparing || isFinishing() || isDestroyed()) return;
-        AgentDefinition definition = agent.getSelectedItemPosition() == 0
-                ? AgentDefinition.CAREER_AGENT : AgentDefinition.DIAGNOSIS_AGENT;
+        AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         String key = definition.apiKey();
         if (key == null || key.trim().isEmpty()) {
             status.setText("请在 local.properties 配置 " + definition.configurationName
@@ -313,7 +347,18 @@ public class AgentStreamActivity extends AppCompatActivity {
         final String titleText = jobTitle.getText().toString();
         final String planningType = careerType.getSelectedItem().toString();
         final String explicitUrl = fileUrl.getText().toString();
-        if (definition == AgentDefinition.DIAGNOSIS_AGENT && jdText.trim().isEmpty()) {
+        String suppliedCount = questionNumber.getText().toString().trim();
+        final String count = suppliedCount.isEmpty() ? "5" : suppliedCount;
+        final int role = interviewRole.getSelectedItemPosition() + 1;
+        final int reference = referenceAnswer.getSelectedItemPosition();
+        if (definition == AgentDefinition.INTERVIEW_AGENT && !count.matches("[5-9]|1[0-5]")) {
+            status.setText("面试题数支持 5–15，留空默认 5。"); return;
+        }
+        if (mode == NONE && definition != AgentDefinition.INTERVIEW_AGENT) {
+            status.setText("该智能体需要简历，请切换简历来源并补充资料。"); return;
+        }
+        if ((definition == AgentDefinition.DIAGNOSIS_AGENT || definition == AgentDefinition.INTERVIEW_AGENT)
+                && jdText.trim().isEmpty()) {
             status.setText("请补充真实职位 JD，职位标题不能替代 JD。"); return;
         }
         if ((mode == TEXT && resumeText.trim().isEmpty()) || (mode == LOCAL && fileUri == null)
@@ -332,12 +377,17 @@ public class AgentStreamActivity extends AppCompatActivity {
         // 冻结全部选择参数，工作线程不读取任何控件或可变的文件/历史记录字段。
         final Uri selectedUri = fileUri;
         final String selectedName = filename, selectedMime = mime, selectedToken = downloadToken;
+        final String selectedHistoryName = resumeName;
         final String summary = initialSummary(definition, planningType, titleText, mode,
-                resumeText, mode == LOCAL ? selectedName : resumeName);
-        if (mode == TEXT || mode == URL_FILE) {
+                resumeText, mode == LOCAL ? selectedName : selectedHistoryName)
+                + (definition == AgentDefinition.INTERVIEW_AGENT ? "\n面试：" + count + " 题 · "
+                + (role == 1 ? "HR综合面试" : "专业面试")
+                + (reference == 1 ? " · 生成参考答案" : " · 不生成参考答案") : "");
+        if (mode == TEXT || mode == URL_FILE || mode == NONE) {
             try {
                 JsonObject body = definition.buildRequest(planningType, jdText, titleText,
-                        mode == TEXT ? resumeText : "", mode == URL_FILE ? explicitUrl : "");
+                        mode == TEXT ? resumeText : "", mode == URL_FILE ? explicitUrl : "",
+                        "", count, role, reference);
                 openResult(definition, key, body, summary);
             } catch (RuntimeException e) {
                 status.setText("资料准备失败，请检查输入后重试。");
@@ -359,7 +409,8 @@ public class AgentStreamActivity extends AppCompatActivity {
                         uploadedFile = client.upload(input, selectedName, selectedMime);
                     }
                 }
-                JsonObject body = definition.buildRequest(planningType, jdText, titleText, "", uploadedFile);
+                JsonObject body = definition.buildRequest(planningType, jdText, titleText, "", uploadedFile,
+                        mode == LOCAL ? selectedName : selectedHistoryName, count, role, reference);
                 runOnUiThread(() -> {
                     if (!isCurrentPreparation(requestGeneration)) return;
                     preparing = false;
@@ -386,15 +437,19 @@ public class AgentStreamActivity extends AppCompatActivity {
     private void openResult(AgentDefinition definition, String key, JsonObject body, String summary) {
         if (isFinishing() || isDestroyed()) return;
         AgentResultActivity.start(this, key, definition.name, body.getAsJsonObject("inputs"),
-                body.get("query").getAsString(), "", body.get("response_mode").getAsString(), summary);
+                body.get("query").getAsString(), "", body.get("response_mode").getAsString(), summary,
+                definition == AgentDefinition.INTERVIEW_AGENT, 10, 3000, 10000);
     }
 
     private static String initialSummary(AgentDefinition definition, String type, String title,
                                          int mode, String resumeText, String name) {
         String business = definition.name + (definition == AgentDefinition.CAREER_AGENT ? " · " + type : "");
-        if (definition == AgentDefinition.DIAGNOSIS_AGENT && !title.trim().isEmpty()) {
+        if (definition == AgentDefinition.OPTIMIZATION_AGENT) business += " · 直接改写";
+        if ((definition == AgentDefinition.DIAGNOSIS_AGENT || definition == AgentDefinition.INTERVIEW_AGENT)
+                && !title.trim().isEmpty()) {
             business += "\n职位：" + title.trim();
         }
+        if (mode == NONE) return business + "\n未提供简历，按职位 JD 面试。";
         if (mode == TEXT) {
             String content = resumeText.trim();
             int end = content.offsetByCodePoints(0, Math.min(120, content.codePointCount(0, content.length())));
@@ -438,7 +493,8 @@ public class AgentStreamActivity extends AppCompatActivity {
     private void updateButtons() {
         if (begin == null) return;
         begin.setEnabled(!invalidParameters && !preparing);
-        for (View view : new View[]{agent, source, careerType, jd, jobTitle, resume, fileUrl, choose}) {
+        for (View view : new View[]{agent, source, careerType, jd, jobTitle, resume, fileUrl, choose,
+                questionNumber, interviewRole, referenceAnswer}) {
             view.setEnabled(!preparing);
         }
         cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
@@ -505,6 +561,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         state.putInt("agent", agent.getSelectedItemPosition());
         state.putInt("source", source.getSelectedItemPosition());
         state.putInt("type", careerType.getSelectedItemPosition());
+        state.putString("question_number", questionNumber.getText().toString());
+        state.putInt("interview_role", interviewRole.getSelectedItemPosition());
+        state.putInt("reference_answer", referenceAnswer.getSelectedItemPosition());
         state.putString("jd", jd.getText().toString());
         state.putString("title", jobTitle.getText().toString());
         state.putString("resume", resume.getText().toString());
@@ -523,6 +582,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         agent.setSelection(state.getInt("agent"));
         source.setSelection(state.getInt("source"));
         careerType.setSelection(state.getInt("type"));
+        questionNumber.setText(state.getString("question_number", "5"));
+        interviewRole.setSelection(state.getInt("interview_role", 0));
+        referenceAnswer.setSelection(state.getInt("reference_answer", 0));
         jd.setText(state.getString("jd", ""));
         jobTitle.setText(state.getString("title", ""));
         resume.setText(state.getString("resume", ""));

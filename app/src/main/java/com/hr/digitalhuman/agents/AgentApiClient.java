@@ -194,6 +194,60 @@ public final class AgentApiClient {
         }
     }
 
+    /** null 表示报告/JSON 尚未生成；其他失败交由调用方提示并允许重试。 */
+    public String fetchReportJson(String conversationId, int timeoutMs) throws IOException {
+        begin();
+        try {
+            if (conversationId == null || !conversationId.matches("[A-Za-z0-9-]{1,256}")) {
+                throw failure("报告会话 ID 无效");
+            }
+            HttpURLConnection conn = open(new URL("https://api.pincaimao.com/agents/v1/agents/reports"
+                    + "?conversation_id=" + URLEncoder.encode(conversationId, "UTF-8")));
+            conn.setConnectTimeout(timeoutMs);
+            conn.setReadTimeout(timeoutMs);
+            conn.setRequestMethod("GET");
+            // 报告接口使用应用密钥原值（app-...），不是对话接口的 Bearer 格式。
+            conn.setRequestProperty("Authorization", apiKey);
+            conn.setRequestProperty("Accept", "application/json");
+            int http = conn.getResponseCode();
+            checkCancelled();
+            if (http == 404) return null;
+            requireSuccess(conn, "报告查询");
+            JsonObject response;
+            try (InputStream input = track(conn.getInputStream())) {
+                response = parseObject(readResponse(input), "报告响应格式无效");
+            }
+            JsonElement code = response.get("code");
+            if (code == null || !code.isJsonPrimitive()
+                    || !code.getAsJsonPrimitive().isNumber()) throw failure("报告状态无效");
+            if (code.getAsInt() == 404) return null;
+            if (code.getAsInt() != 0) throw failure("报告查询失败");
+            JsonElement data = response.get("data");
+            if (data == null || data.isJsonNull()) return null;
+            if (!data.isJsonObject()) throw failure("报告数据无效");
+            String returnedId = stringField(data.getAsJsonObject(), "conversation_id");
+            if (!conversationId.equals(returnedId)) throw failure("报告会话 ID 不一致");
+            String encoded = stringField(data.getAsJsonObject(), "json_base64");
+            if (encoded == null || encoded.trim().isEmpty() || "null".equals(encoded.trim())) return null;
+            byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
+            String json = UTF8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes)).toString();
+            JsonElement parsed = com.google.gson.JsonParser.parseString(json);
+            if (!parsed.isJsonObject() && !parsed.isJsonArray()) throw failure("报告 JSON 格式无效");
+            // 重新序列化，保证复制的是标准 JSON，而非解析器容忍的非标准原文。
+            String normalized = gson.toJson(parsed);
+            // 剪贴板走 Binder，限制结果大小，避免事务超限。
+            if (normalized.length() > 100000) throw failure("报告 JSON 超过复制上限");
+            checkCancelled();
+            return normalized;
+        } catch (IOException | RuntimeException e) {
+            throw sanitize("报告查询或解码", e);
+        } finally {
+            finish();
+        }
+    }
+
     public String upload(InputStream input, String filename, String mimeType) throws IOException {
         if (input == null) {
             throw failure("上传输入无效");

@@ -58,6 +58,8 @@ jobs:
           API_BASE_URL: ${{ vars.API_BASE_URL }}
           AGENTS_CAREER_API_KEY: ${{ secrets.AGENTS_CAREER_API_KEY }}
           AGENTS_RESUME_DIAGNOSIS_API_KEY: ${{ secrets.AGENTS_RESUME_DIAGNOSIS_API_KEY }}
+          AGENTS_RESUME_OPTIMIZATION_API_KEY: ${{ secrets.AGENTS_RESUME_OPTIMIZATION_API_KEY }}
+          AGENTS_MOCK_INTERVIEW_API_KEY: ${{ secrets.AGENTS_MOCK_INTERVIEW_API_KEY }}
         run: |
           python3 - <<'PY'
           import json
@@ -68,6 +70,8 @@ jobs:
               'api.base.url': os.environ.get('API_BASE_URL') or 'http://xxx',
               'agents.career.api.key': os.environ.get('AGENTS_CAREER_API_KEY', ''),
               'agents.resume.diagnosis.api.key': os.environ.get('AGENTS_RESUME_DIAGNOSIS_API_KEY', ''),
+              'agents.resume.optimization.api.key': os.environ.get('AGENTS_RESUME_OPTIMIZATION_API_KEY', ''),
+              'agents.mock.interview.api.key': os.environ.get('AGENTS_MOCK_INTERVIEW_API_KEY', ''),
           }
           # Properties.load 使用 ISO-8859-1，非 ASCII 字符需使用 Unicode 转义。
           def escape(value):

@@ -43,9 +43,24 @@ public final class AgentResultActivity extends AppCompatActivity {
     public static final String EXTRA_CONVERSATION_ID = "conversation_id";
     public static final String EXTRA_RESPONSE_MODE = "response_mode";
     public static final String EXTRA_INITIAL_MESSAGE = "initial_message";
+    public static final String EXTRA_RETAIN_INPUTS = "retain_inputs";
+    public static final String EXTRA_POLL_ATTEMPTS = "poll_attempts";
+    public static final String EXTRA_POLL_INTERVAL_MS = "poll_interval_ms";
+    public static final String EXTRA_POLL_TIMEOUT_MS = "poll_timeout_ms";
+    private Button getResult;
+    private boolean sseCompleted, polling;
+    private int pollAttempts = 10, pollIntervalMs = 3000, pollTimeoutMs = 10000;
+    private long reportGeneration;
+    private AgentApiClient reportClient;
+    private Future<?> reportTask;
+    private final Runnable pollNext = this::queryReport;
+    private int attempts;
+    private String reportConversation = "";
 
     public static void start(Context context, String apiKey, String displayName, JsonObject inputs,
-                             String query, String conversationId, String responseMode, String initialMessage) {
+                             String query, String conversationId, String responseMode, String initialMessage,
+                             boolean retainInputs,
+                             int pollAttempts, int pollIntervalMs, int pollTimeoutMs) {
         Intent intent = new Intent(context, AgentResultActivity.class);
         intent.putExtra(EXTRA_API_KEY, apiKey);
         intent.putExtra(EXTRA_DISPLAY_NAME, displayName);
@@ -54,6 +69,10 @@ public final class AgentResultActivity extends AppCompatActivity {
         intent.putExtra(EXTRA_CONVERSATION_ID, conversationId);
         intent.putExtra(EXTRA_RESPONSE_MODE, responseMode);
         intent.putExtra(EXTRA_INITIAL_MESSAGE, initialMessage);
+        intent.putExtra(EXTRA_RETAIN_INPUTS, retainInputs);
+        intent.putExtra(EXTRA_POLL_ATTEMPTS, pollAttempts);
+        intent.putExtra(EXTRA_POLL_INTERVAL_MS, pollIntervalMs);
+        intent.putExtra(EXTRA_POLL_TIMEOUT_MS, pollTimeoutMs);
         if (!(context instanceof Activity)) intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
         context.startActivity(intent);
     }
@@ -102,6 +121,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     private JsonObject initialInputs = new JsonObject();
     private String apiKey = "", displayName = "智能体", initialQuery = "", initialMessage = "";
     private String responseMode = "streaming";
+    private boolean retainInputs;
     private TextView heading;
     private final Runnable renderTick = this::parseLatest;
 
@@ -112,6 +132,8 @@ public final class AgentResultActivity extends AppCompatActivity {
         createViews();
         readAndValidateIntent();
         if (savedInstanceState != null) {
+            retainInputs = savedInstanceState.getBoolean("retain_inputs", retainInputs);
+            sseCompleted = savedInstanceState.getBoolean("sse_completed", false);
             synchronized (lock) {
                 ArrayList<String> texts = savedInstanceState.getStringArrayList("texts");
                 ArrayList<String> states = savedInstanceState.getStringArrayList("states");
@@ -170,8 +192,10 @@ public final class AgentResultActivity extends AppCompatActivity {
         stop = button("停止");
         send = button("发送");
         latest = button("回到底部");
+        getResult = button("获取结果");
+        getResult.setOnClickListener(v -> startReportPolling());
         actions.addView(back);
-        for (Button action : new Button[]{stop, latest}) {
+        for (Button action : new Button[]{stop, latest, getResult}) {
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(-2, -2);
             lp.leftMargin = dp(8);
             actions.addView(action, lp);
@@ -248,7 +272,7 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void toggleVoice() {
         if (capturing) { endVoice(); return; }
-        if (!resumed || running || invalid || destroyed) return;
+        if (!resumed || running || polling || invalid || destroyed) return;
         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
                 != android.content.pm.PackageManager.PERMISSION_GRANTED) {
             androidx.core.app.ActivityCompat.requestPermissions(this,
@@ -289,7 +313,11 @@ public final class AgentResultActivity extends AppCompatActivity {
         }
     }
 
-    @Override protected void onResume() { super.onResume(); resumed = true; }
+    @Override protected void onResume() {
+        super.onResume();
+        resumed = true;
+        updateButtons();
+    }
     @Override protected void onPause() { resumed = false; endVoice(); super.onPause(); }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
@@ -303,6 +331,14 @@ public final class AgentResultActivity extends AppCompatActivity {
     private void readAndValidateIntent() {
         try {
             Intent intent = getIntent();
+            retainInputs = intent.getBooleanExtra(EXTRA_RETAIN_INPUTS, false);
+            pollAttempts = intent.getIntExtra(EXTRA_POLL_ATTEMPTS, 10);
+            pollIntervalMs = intent.getIntExtra(EXTRA_POLL_INTERVAL_MS, 3000);
+            pollTimeoutMs = intent.getIntExtra(EXTRA_POLL_TIMEOUT_MS, 10000);
+            if (pollAttempts < 1 || pollAttempts > 100 || pollIntervalMs < 1000
+                    || pollIntervalMs > 60000 || pollTimeoutMs < 1000 || pollTimeoutMs > 60000) {
+                throw new IllegalArgumentException();
+            }
             apiKey = input(intent, EXTRA_API_KEY);
             new AgentApiClient(apiKey); // 复用密钥校验，不启动网络，不向渲染层传递密钥。
             displayName = input(intent, EXTRA_DISPLAY_NAME).trim();
@@ -342,7 +378,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     }
 
     private void startRequest(String query) {
-        if (running || invalid || destroyed) return;
+        if (running || polling || invalid || destroyed) return;
         endVoice();
         final boolean first = turns == 0;
         if (query.trim().isEmpty() || query.length() > MAX_INPUT
@@ -373,6 +409,8 @@ public final class AgentResultActivity extends AppCompatActivity {
             reply.state = "正在回复…";
             dirty = true;
         }
+        cancelReportPolling();
+        sseCompleted = false;
         client = requestClient;
         running = true;
         composer.setText("");
@@ -385,7 +423,9 @@ public final class AgentResultActivity extends AppCompatActivity {
             try {
                 if (!isCurrent(id)) return;
                 JsonObject body = new JsonObject();
-                body.add("inputs", currentConversation.isEmpty() ? initialInputs.deepCopy() : new JsonObject());
+                // 面试每轮携带原设置和简历；其他智能体继续沿用服务端会话上下文。
+                body.add("inputs", currentConversation.isEmpty() || retainInputs
+                        ? initialInputs.deepCopy() : new JsonObject());
                 body.addProperty("query", query);
                 if (!currentConversation.isEmpty()) body.addProperty("conversation_id", currentConversation);
                 body.addProperty("response_mode", responseMode);
@@ -420,7 +460,11 @@ public final class AgentResultActivity extends AppCompatActivity {
                     }
                     @Override public void onComplete() {
                         // 客户端验证 message_end / workflow_finished 后完成，普通 EOF 不算完成。
-                        main.post(() -> finishRequest(id, "回复完成"));
+                        main.post(() -> {
+                            if (!isCurrent(id)) return;
+                            sseCompleted = true;
+                            finishRequest(id, "回复完成");
+                        });
                     }
                 });
             } catch (IOException | RuntimeException e) {
@@ -446,6 +490,99 @@ public final class AgentResultActivity extends AppCompatActivity {
         }
         main.removeCallbacks(renderTick);
         parseLatest();
+    }
+
+    private void startReportPolling() {
+        if (!sseCompleted || running || polling || invalid || destroyed
+                || conversationId.isEmpty()) return;
+        endVoice();
+        polling = true;
+        attempts = 0;
+        reportConversation = conversationId;
+        ++reportGeneration;
+        updateButtons();
+        queryReport();
+    }
+
+    private void queryReport() {
+        if (!polling || destroyed) return;
+        final long id = reportGeneration;
+        final int attempt = ++attempts;
+        final long expiresAt = android.os.SystemClock.elapsedRealtime() + pollTimeoutMs;
+        final AgentApiClient request;
+        try { request = new AgentApiClient(apiKey); }
+        catch (RuntimeException e) { finishReport("报告密钥无效，可检查配置后重试。"); return; }
+        reportClient = request;
+        final String target = reportConversation;
+        status.setText("正在获取结果（" + attempt + "/" + pollAttempts + "）…");
+        // 整次查询的墙钟超时，不能只依赖 socket 的单次读取超时。
+        final Runnable deadline = () -> {
+            if (!isCurrentReport(id, attempt)) return;
+            AgentApiClient old = reportClient;
+            reportClient = null;
+            if (reportTask != null) reportTask.cancel(true);
+            reportTask = null;
+            if (old != null) new Thread(old::cancel, "agent-report-timeout").start();
+            finishReport("获取结果超时，可再次点击“获取结果”。");
+        };
+        main.postDelayed(deadline, pollTimeoutMs);
+        reportTask = network.submit(() -> {
+            try {
+                String json = request.fetchReportJson(target, pollTimeoutMs);
+                main.post(() -> {
+                    if (!isCurrentReport(id, attempt)) return;
+                    main.removeCallbacks(deadline);
+                    if (android.os.SystemClock.elapsedRealtime() >= expiresAt) {
+                        finishReport("获取结果超时，可再次点击“获取结果”。");
+                        return;
+                    }
+                    reportClient = null;
+                    reportTask = null;
+                    if (json != null) {
+                        try {
+                            android.content.ClipboardManager clipboard = (android.content.ClipboardManager)
+                                    getSystemService(Context.CLIPBOARD_SERVICE);
+                            clipboard.setPrimaryClip(android.content.ClipData.newPlainText("智能体结果 JSON", json));
+                            finishReport("结果 JSON 已复制到剪贴板，包含简历个人信息，请谨慎粘贴。");
+                        } catch (RuntimeException e) {
+                            finishReport("结果复制失败，可再次点击“获取结果”。");
+                        }
+                    } else if (attempt >= pollAttempts) {
+                        finishReport("已达到最大轮询次数，JSON 暂未生成，可再次点击“获取结果”。");
+                    } else {
+                        status.setText("JSON 暂未生成，等待下一次查询（" + attempt + "/" + pollAttempts + "）。");
+                        main.postDelayed(pollNext, pollIntervalMs);
+                    }
+                });
+            } catch (IOException | RuntimeException e) {
+                main.post(() -> {
+                    if (!isCurrentReport(id, attempt)) return;
+                    main.removeCallbacks(deadline);
+                    finishReport("获取结果失败，请检查网络、报告权限和 JSON 格式后再次点击。");
+                });
+            }
+        });
+    }
+
+    private boolean isCurrentReport(long id, int attempt) {
+        return !destroyed && polling && reportGeneration == id && attempts == attempt;
+    }
+
+    private void finishReport(String message) {
+        cancelReportPolling();
+        status.setText(message);
+        updateButtons();
+    }
+
+    private void cancelReportPolling() {
+        ++reportGeneration;
+        polling = false;
+        main.removeCallbacks(pollNext);
+        AgentApiClient old = reportClient;
+        reportClient = null;
+        if (reportTask != null) reportTask.cancel(true);
+        reportTask = null;
+        if (old != null) new Thread(old::cancel, "agent-report-cancel").start();
     }
 
     /** 50ms 合并分片，WebView 内另有单飞与 React 提交确认。 */
@@ -489,6 +626,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     }
 
     private void cancelNetwork() {
+        cancelReportPolling();
         endVoice();
         synchronized (lock) { ++generation; }
         AgentApiClient old = client;
@@ -512,7 +650,13 @@ public final class AgentResultActivity extends AppCompatActivity {
         endVoice();
         // 立即冻结当前结果，避免旋转保存之后仍接收但未保存的分片。
         if (running) stopRequest("页面已重建，原请求已中止；保留部分回复。");
+        if (polling) {
+            cancelReportPolling();
+            status.setText("页面状态已保存，结果查询已取消，可再次点击“获取结果”。");
+            updateButtons();
+        }
         super.onSaveInstanceState(state);
+        state.putBoolean("sse_completed", sseCompleted);
         synchronized (lock) {
             ArrayList<String> texts = new ArrayList<>(), states = new ArrayList<>();
             int remaining = MAX_SAVED;
@@ -531,6 +675,7 @@ public final class AgentResultActivity extends AppCompatActivity {
             state.putInt("turns", turns);
             state.putInt("total_chars", totalChars);
         }
+        state.putBoolean("retain_inputs", retainInputs);
         state.putString("draft", composer.getText().toString());
         state.putString("status", status.getText().toString());
         state.putBoolean("following", result.isFollowing());
@@ -549,8 +694,10 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void updateButtons() {
         stop.setEnabled(running);
-        microphone.setEnabled(!running && !invalid && !destroyed);
-        boolean available = !running && !invalid && !destroyed && (turns == 0 || !conversationId.isEmpty())
+        getResult.setEnabled(sseCompleted && !conversationId.isEmpty()
+                && !running && !polling && !invalid && !destroyed);
+        microphone.setEnabled(!running && !polling && !invalid && !destroyed);
+        boolean available = !running && !polling && !invalid && !destroyed && (turns == 0 || !conversationId.isEmpty())
                 && turns < MAX_TURNS && totalChars < MAX_SESSION;
         send.setEnabled(available && !composer.getText().toString().trim().isEmpty());
         if (!running && !invalid && !destroyed) {
