@@ -79,6 +79,7 @@ public class ThinkingScene extends LinearLayout {
                 tv.setTypeface(tv.getTypeface(), android.graphics.Typeface.BOLD);
                 tv.setGravity(Gravity.CENTER);
                 tv.setSingleLine(true);
+                tv.setMinHeight(UiDecor.dp(context, 48));
                 int hp = UiDecor.dp(context, 10);
                 int vp = UiDecor.dp(context, 4);
                 tv.setPadding(hp, vp, hp, vp);
@@ -89,7 +90,6 @@ public class ThinkingScene extends LinearLayout {
                 tv.setBackground(bg);
                 String agentId = AGENT_IDS[i];
                 if (agentId != null) {
-                    tv.setMinHeight(UiDecor.dp(context, 48));
                     tv.setFocusable(true);
                     tv.setOnClickListener(v -> AgentStreamActivity.start(getContext(), agentId));
                 }
