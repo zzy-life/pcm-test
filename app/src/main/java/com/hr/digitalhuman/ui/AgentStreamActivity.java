@@ -193,11 +193,15 @@ public class AgentStreamActivity extends AppCompatActivity {
         agent = spinner(settings, names);
         careerType = spinner(settings, "晋升路径", "转型建议");
         jd = editor(settings, "岗位招聘要求", 4);
-        jdVoice = button("语音输入岗位要求");
-        settings.addView(jdVoice, UiDecor.cardLp(this, 8));
+        LinearLayout jdActions = new LinearLayout(this);
+        settings.addView(jdActions, UiDecor.cardLp(this, 8));
+        jdVoice = button("语音输入岗位");
+        LinearLayout.LayoutParams jdVoiceLp = new LinearLayout.LayoutParams(0, -2, 1);
+        jdVoiceLp.rightMargin = dp(8);
+        jdActions.addView(jdVoice, jdVoiceLp);
         jdVoice.setOnClickListener(v -> toggleVoice(jd));
         useSample = button("使用示例数据");
-        settings.addView(useSample, UiDecor.cardLp(this, 8));
+        jdActions.addView(useSample, new LinearLayout.LayoutParams(0, -2, 1));
         useSample.setOnClickListener(v -> {
             // 仅主动点击时覆盖资料，切换到文本来源，避免继续发送历史简历或文件。
             jd.setText(SAMPLE_JD);
@@ -221,7 +225,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         source = spinner(inputs, "手动填写简历", "上传本地简历文件", "在线简历文件链接");
         resume = editor(inputs, "简历正文", 5);
         resumeVoice = button("语音输入简历");
-        inputs.addView(resumeVoice, UiDecor.cardLp(this, 8));
         resumeVoice.setOnClickListener(v -> toggleVoice(resume));
         fileUrl = editor(inputs, "简历文件链接", 2);
         choose = button("选择本地文件（最多 50MB）");
@@ -232,9 +235,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         begin = button("开始");
         begin.setBackgroundResource(R.drawable.bg_btn_primary);
         begin.setTextColor(UiDecor.color(this, R.color.white));
-        LinearLayout.LayoutParams beginLp = UiDecor.cardLp(this, 0);
-        beginLp.topMargin = dp(12);
-        inputs.addView(begin, beginLp);
+        LinearLayout resumeActions = new LinearLayout(this);
+        inputs.addView(resumeActions, UiDecor.cardLp(this, 8));
+        LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(0, -2, 1);
+        resumeVoiceLp.rightMargin = dp(8);
+        resumeActions.addView(resumeVoice, resumeVoiceLp);
+        resumeActions.addView(begin, new LinearLayout.LayoutParams(0, -2, 1));
         begin.setOnClickListener(v -> startRequest());
         cancel = button("取消准备");
         inputs.addView(cancel, UiDecor.cardLp(this, 8));
@@ -299,7 +305,7 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void updateVoiceButtons() {
         if (jdVoice == null || resumeVoice == null) return;
-        jdVoice.setText(voiceTarget == jd ? "结束语音输入" : "语音输入岗位要求");
+        jdVoice.setText(voiceTarget == jd ? "结束语音输入" : "语音输入岗位");
         resumeVoice.setText(voiceTarget == resume ? "结束语音输入" : "语音输入简历");
         jdVoice.setEnabled(resumed && !preparing && !invalidParameters);
         resumeVoice.setEnabled(resumed && !preparing && !invalidParameters);
