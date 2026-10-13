@@ -38,29 +38,54 @@ import java.util.concurrent.Future;
 /** 独立原生页面：不依赖机器人连接，所有网络操作在后台执行。 */
 public class AgentStreamActivity extends AppCompatActivity {
     public static final String EXTRA_AGENT_ID = "agent_id";
-    public static final String EXTRA_JOB_INFO = "job_info";
-    public static final String EXTRA_JOB_TITLE = "job_title";
-    public static final String EXTRA_RESUME_CONTENT = "resume_content";
-    public static final String EXTRA_FILE_URL = "file_url";
-    public static final String EXTRA_DOWNLOAD_TOKEN = "download_token";
-    public static final String EXTRA_RESUME_NAME = "resume_name";
-    public static final String EXTRA_RECORD_ID = "record_id";
     private static final int PICK_FILE = 6101;
     private static final int MAX_INPUT_CHARS = 50000;
     private boolean invalidParameters;
-    private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2, HISTORY = 3;
+    private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2;
     private static final AgentDefinition[] AGENTS = {AgentDefinition.CAREER_AGENT,
             AgentDefinition.DIAGNOSIS_AGENT, AgentDefinition.OPTIMIZATION_AGENT, AgentDefinition.INTERVIEW_AGENT};
-    private static final String SAMPLE_JD = "【虚构示例 JD，请替换】招聘 Java 后端工程师，负责业务接口开发与数据库优化，要求熟悉 Java、SQL 和团队协作。";
-    private static final String SAMPLE_RESUME = "【虚构示例简历，请替换】示例候选人：3 年 Java 后端开发经验，参与订单系统接口开发、SQL 优化及自动化测试。以上经历均为虚构。";
+    private static final String SAMPLE_JD = "高级销售专员\n高级销售专员 / 销售主管\n"
+            + "岗位亮点\n行业领先的平台，完善的晋升通道和培训体系\n"
+            + "参与核心业务拓展，发挥个人及团队影响力\n丰厚的绩效激励与多元成长机会\n"
+            + "岗位职责\n负责公司重点产品的市场开拓与销售，挖掘并维护核心客户资源；\n"
+            + "独立完成销售目标，推动大客户签约与合作落地；\n"
+            + "参与销售策略制定，根据市场变化及时调整业务方向；\n"
+            + "指导和培训新同事，提升团队整体业绩与专业能力；\n"
+            + "定期分析市场和客户需求，输出数据报告，推动业务优化；\n"
+            + "协同市场、产品等多部门，推动项目高效落地。\n"
+            + "任职要求\n大专及以上学历，市场营销、管理等相关专业优先；\n"
+            + "3年以上销售相关工作经验，有B端客户开发经验者优先；\n"
+            + "具备独立开发客户、谈判签约及项目跟进能力；\n"
+            + "具备较强的市场洞察力与数据分析能力；\n"
+            + "沟通表达能力强，具备团队协作与带教经验者优先；\n"
+            + "目标感强，抗压能力好，具备自我驱动和持续学习能力。\n"
+            + "加分项\n有互联网、科技、快消等行业销售经验；\n"
+            + "主导或参与过大客户项目及团队管理经历；\n熟练使用CRM系统及办公软件。\n"
+            + "薪酬福利\n具有市场竞争力的底薪+高额绩效奖金\n"
+            + "五险一金、年度体检、节日福利\n完善的培训体系与多元晋升空间";
+    private static final String SAMPLE_RESUME = "# 个人简历——赵小晴（销售）\n\n"
+            + "我叫赵小晴，目前居住在上海市，联系电话为138-XXXX-XXXX，电子邮箱为zhaoxiaoqing@example.com，目前正在寻求销售主管或高级销售专员等进阶销售岗位。\n\n"
+            + "**个人简介**\n\n"
+            + "我拥有三年专业销售工作经验，具备扎实的客户开发与维护能力，熟悉销售业务流程及团队协作模式。在工作中，我善于与客户沟通，具有较强的目标意识和执行能力，能够独立完成销售任务，并积极推动团队业绩提升。我希望在更具挑战性的销售岗位上持续积累经验、提升专业能力，实现个人职业发展与企业业务增长的共同目标。\n\n"
+            + "**工作经历**\n\n"
+            + "2019年7月至2022年8月，我在上海某科技有限公司担任销售专员，主要负责B端客户的开发、维护及销售业务拓展。在任职期间，我能够独立完成年度销售额目标，年均销售业绩增长达到20%。通过积极开拓市场，我累计拓展了70余家新客户，并与多个重点客户建立了长期稳定的合作关系，客户续签率超过80%。\n\n"
+            + "在业务开展过程中，我积极参与大型项目的投标及商务谈判工作，协助团队成功签约多个百万级订单。同时，我定期开展市场调研，收集和分析行业动态、市场竞争情况及客户需求，为部门制定和优化销售策略提供有效支持。此外，我还承担了部分新员工指导工作，帮助新入职同事熟悉产品知识、销售流程及客户沟通技巧，促进团队整体业务能力与销售业绩提升。\n\n"
+            + "**教育背景**\n\n"
+            + "2015年9月至2019年6月，我就读于上海师范大学市场营销专业，取得本科学历。在校期间，我系统学习了市场营销相关专业知识，为后续从事销售、客户关系管理及市场分析等工作奠定了基础。\n\n"
+            + "**专业技能**\n\n"
+            + "我熟悉销售业务全流程，能够熟练运用CRM客户关系管理系统开展客户信息管理、销售跟进及业务分析工作。我具备良好的客户沟通能力、客户关系维护能力及商务谈判技巧，能够根据不同客户需求制定相应的销售方案。同时，我具有一定的市场分析、数据整理及业务报告撰写能力，能够熟练使用Word、Excel、PowerPoint等Office办公软件，满足日常销售管理、数据统计及工作汇报需求。\n\n"
+            + "**自我评价**\n\n"
+            + "我性格积极乐观，工作态度认真负责，具备较强的抗压能力和自我驱动力。在实际工作中，我坚持以目标为导向，注重执行效率和工作成果，能够快速适应新的工作环境及业务要求，并通过持续努力取得良好业绩。同时，我注重团队合作与沟通协调，具有较强的学习能力和自我提升意识，能够主动总结工作经验，不断优化销售方法，提高专业水平。\n\n"
+            + "**求职意向**\n\n"
+            + "我希望应聘销售主管或高级销售专员岗位，目标行业包括互联网、科技及快速消费品等领域，期望工作地点为上海市。对于薪资待遇，我持开放态度，具体可根据岗位职责、企业发展情况及个人能力进行面议。";
 
     private Spinner agent, source, careerType;
     private EditText jd, resume, fileUrl, questionNumber;
     private String jobTitle = "";
     private Spinner interviewRole, referenceAnswer;
     private LinearLayout interviewSettings;
-    private TextView status, fileInfo, agentHint;
-    private Button begin, choose, cancel;
+    private TextView status, fileInfo;
+    private Button begin, choose, cancel, useSample;
     private final ExecutorService preparationExecutor = Executors.newCachedThreadPool();
     private Future<?> preparationTask;
     private AgentApiClient preparationClient;
@@ -69,8 +94,6 @@ public class AgentStreamActivity extends AppCompatActivity {
     private boolean preparing;
     private Uri fileUri;
     private String filename = "resume", mime = "application/octet-stream";
-    private String downloadToken = "", resumeName = "";
-    private Long recordId;
     private boolean initializing = true;
     private int lastAgent, lastSource, lastType;
 
@@ -81,18 +104,6 @@ public class AgentStreamActivity extends AppCompatActivity {
     public static void start(Context context, String agentId) {
         Intent intent = new Intent(context, AgentStreamActivity.class);
         intent.putExtra(EXTRA_AGENT_ID, agentId);
-        launch(context, intent);
-    }
-
-    public static void startWithResume(Context context, String downloadToken, String resumeName,
-                                       String targetPosition, Long recordId) {
-        Intent intent = new Intent(context, AgentStreamActivity.class);
-        intent.putExtra(EXTRA_AGENT_ID, AgentDefinition.RESUME_DIAGNOSIS);
-        intent.putExtra(EXTRA_DOWNLOAD_TOKEN, downloadToken);
-        intent.putExtra(EXTRA_RESUME_NAME, resumeName);
-        // 职位标题不是 JD，真实历史记录必须由用户补充完整 JD。
-        intent.putExtra(EXTRA_JOB_TITLE, targetPosition);
-        if (recordId != null) intent.putExtra(EXTRA_RECORD_ID, recordId.longValue());
         launch(context, intent);
     }
 
@@ -153,10 +164,19 @@ public class AgentStreamActivity extends AppCompatActivity {
         String[] names = new String[AGENTS.length];
         for (int i = 0; i < AGENTS.length; i++) names[i] = AGENTS[i].name;
         agent = spinner(settings, names);
-        agentHint = UiDecor.subtitle(this, "");
-        settings.addView(agentHint);
         careerType = spinner(settings, "晋升路径", "转型建议");
-        jd = editor(settings, "职位 JD", 4);
+        jd = editor(settings, "岗位招聘要求", 4);
+        useSample = button("使用示例数据");
+        settings.addView(useSample, UiDecor.cardLp(this, 8));
+        useSample.setOnClickListener(v -> {
+            // 仅主动点击时覆盖资料，切换到文本来源，避免继续发送历史简历或文件。
+            jd.setText(SAMPLE_JD);
+            resume.setText(SAMPLE_RESUME);
+            jobTitle = "高级销售专员 / 销售主管";
+            source.setSelection(TEXT);
+            updateSource();
+            status.setText("已填入示例数据");
+        });
         interviewSettings = column();
         settings.addView(interviewSettings);
         label(interviewSettings, "面试题数（默认 5）");
@@ -167,10 +187,10 @@ public class AgentStreamActivity extends AppCompatActivity {
         interviewRole = spinner(interviewSettings, "HR综合面试", "专业面试");
         label(interviewSettings, "参考答案");
         referenceAnswer = spinner(interviewSettings, "不生成参考答案", "生成参考答案");
-        label(inputs, "简历来源（只发送所选来源）");
-        source = spinner(inputs, "编辑简历文本", "本地文件", "公网URL文件", "历史简历下载凭据");
+        label(inputs, "简历来源");
+        source = spinner(inputs, "手动填写简历", "上传本地简历文件", "在线简历文件链接");
         resume = editor(inputs, "简历正文", 5);
-        fileUrl = editor(inputs, "公网文件完整 URL（http/https，不是下载 token）", 2);
+        fileUrl = editor(inputs, "简历文件链接", 2);
         choose = button("选择本地文件（最多 50MB）");
         inputs.addView(choose, UiDecor.cardLp(this, 8));
         choose.setOnClickListener(v -> openDocument());
@@ -185,9 +205,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         inputs.addView(cancel, UiDecor.cardLp(this, 8));
         cancel.setOnClickListener(v -> {
             cancelPreparation();
-            status.setText("已取消准备，可修改资料后重新开始。");
+            status.setText("已取消");
         });
-        status = UiDecor.subtitle(this, "确认资料后开始，将在独立页面显示结果或进行面试问答。");
+        status = UiDecor.subtitle(this, "");
         inputs.addView(status);
         setContentView(root);
     }
@@ -205,39 +225,6 @@ public class AgentStreamActivity extends AppCompatActivity {
                 invalidParameters = true;
                 status.setText("不支持的智能体 ID，请返回并选择受支持的智能体。");
             }
-        }
-        for (String name : new String[]{EXTRA_RESUME_CONTENT, EXTRA_JOB_INFO, EXTRA_JOB_TITLE, EXTRA_FILE_URL}) {
-            String value = i.getStringExtra(name);
-            if (value != null && value.length() > MAX_INPUT_CHARS) {
-                invalidParameters = true;
-                status.setText("传入资料超过文本长度上限，请返回缩短内容或改用文件；不会发送截断资料。");
-                return;
-            }
-        }
-        downloadToken = text(i.getStringExtra(EXTRA_DOWNLOAD_TOKEN));
-        resumeName = text(i.getStringExtra(EXTRA_RESUME_NAME));
-        if (i.hasExtra(EXTRA_RECORD_ID)) recordId = i.getLongExtra(EXTRA_RECORD_ID, 0);
-        // 只有完全没有真实资料/记录参数时才提供虚构示例。
-        boolean real = i.hasExtra(EXTRA_RESUME_CONTENT) || i.hasExtra(EXTRA_FILE_URL)
-                || i.hasExtra(EXTRA_DOWNLOAD_TOKEN) || i.hasExtra(EXTRA_RECORD_ID)
-                || i.hasExtra(EXTRA_RESUME_NAME) || i.hasExtra(EXTRA_JOB_TITLE)
-                || i.hasExtra(EXTRA_JOB_INFO);
-        resume.setText(i.hasExtra(EXTRA_RESUME_CONTENT)
-                ? text(i.getStringExtra(EXTRA_RESUME_CONTENT)) : (real ? "" : SAMPLE_RESUME));
-        jd.setText(i.hasExtra(EXTRA_JOB_INFO)
-                ? text(i.getStringExtra(EXTRA_JOB_INFO)) : (real ? "" : SAMPLE_JD));
-        jobTitle = text(i.getStringExtra(EXTRA_JOB_TITLE));
-        String suppliedUrl = i.getStringExtra(EXTRA_FILE_URL);
-        // 不 trim URL，保留控制字符供开始时校验拒绝，不悄悄修正非法地址。
-        fileUrl.setText(suppliedUrl == null ? "" : suppliedUrl);
-        // 冲突规则固定且可见：正文 > file_url > 历史 token；仍允许用户手动切换。
-        if (!resume.getText().toString().trim().isEmpty()) source.setSelection(TEXT);
-        else if (!fileUrl.getText().toString().trim().isEmpty()) source.setSelection(URL_FILE);
-        else if (!downloadToken.isEmpty()) source.setSelection(HISTORY);
-        if ((i.hasExtra(EXTRA_RESUME_CONTENT) && i.hasExtra(EXTRA_FILE_URL))
-                || (i.hasExtra(EXTRA_DOWNLOAD_TOKEN) && (i.hasExtra(EXTRA_RESUME_CONTENT)
-                || i.hasExtra(EXTRA_FILE_URL)))) {
-            status.setText("多种资料参数：优先正文，其次 file_url，最后历史凭据；只发送当前所选来源。");
         }
     }
 
@@ -276,15 +263,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);
         interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
         jd.setVisibility(career ? View.GONE : View.VISIBLE);
-        if (career) agentHint.setText("职业规划不发送 JD 或职位标题；资料保留供切换智能体使用。");
-        else if (definition == AgentDefinition.OPTIMIZATION_AGENT) {
-            jd.setHint("职位 JD（可选，填写后针对岗位优化）");
-            agentHint.setText("直接改写简历；不填 JD 为通用优化，填写后针对岗位优化。简历必填。");
-        } else {
-            jd.setHint("职位 JD（必填，职位标题不能替代）");
-            agentHint.setText(interview ? "填写真实 JD 并提供简历后开始面试；在结果页回答问题，可使用语音转文字。"
-                    : "简历诊断必须填写完整 JD；未知职位请勿使用示例替代。");
-        }
+        jd.setHint(definition == AgentDefinition.OPTIMIZATION_AGENT
+                ? "岗位招聘要求（选填）" : "岗位招聘要求（必填）");
     }
 
     private void updateSource() {
@@ -292,14 +272,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         resume.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
         fileUrl.setVisibility(mode == URL_FILE ? View.VISIBLE : View.GONE);
         choose.setVisibility(mode == LOCAL ? View.VISIBLE : View.GONE);
-        if (mode == LOCAL) fileInfo.setText(fileUri == null ? "尚未选择本地文件" : "本地文件：" + filename);
-        else if (mode == HISTORY) fileInfo.setText(downloadToken.isEmpty()
-                ? "没有历史下载凭据，请改用文本或本地文件。"
-                : "真实历史简历：" + (resumeName.isEmpty() ? "未命名" : resumeName)
-                + (recordId == null ? "" : "（记录 " + recordId + "）")
-                + "；开始后下载 PDF 并上传，不以虚构简历替代。");
-        else if (mode == URL_FILE) fileInfo.setText("使用可公开访问的 http/https 完整文件 URL；不接受本机、私网或下载 token。");
-        else fileInfo.setText("编辑正文；含“虚构示例”的内容仅用于演示，请替换为实际简历。");
+        fileInfo.setVisibility(mode == LOCAL && fileUri != null ? View.VISIBLE : View.GONE);
+        fileInfo.setText(mode == LOCAL && fileUri != null ? filename : "");
     }
 
     private void openDocument() {
@@ -333,7 +307,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         } catch (RuntimeException ignored) { /* 不输出包含 URI 的系统异常。 */ }
         source.setSelection(LOCAL);
         updateSource();
-        status.setText("文件已选择；点击开始上传并分析。");
+        status.setText("文件已选择");
     }
 
     private void startRequest() {
@@ -341,8 +315,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         String key = definition.apiKey();
         if (key == null || key.trim().isEmpty()) {
-            status.setText("请在 local.properties 配置 " + definition.configurationName
-                    + "，由对应 BuildConfig 密钥字段读取。");
+            status.setText("该功能尚未配置服务，请联系管理员后重试。");
             return;
         }
         final int mode = source.getSelectedItemPosition();
@@ -360,27 +333,26 @@ public class AgentStreamActivity extends AppCompatActivity {
         }
         if ((definition == AgentDefinition.DIAGNOSIS_AGENT || definition == AgentDefinition.INTERVIEW_AGENT)
                 && jdText.trim().isEmpty()) {
-            status.setText("请补充真实职位 JD，职位标题不能替代 JD。"); return;
+            status.setText("请填写岗位招聘要求"); return;
         }
         if ((mode == TEXT && resumeText.trim().isEmpty()) || (mode == LOCAL && fileUri == null)
-                || (mode == URL_FILE && explicitUrl.isEmpty()) || (mode == HISTORY && downloadToken.isEmpty())) {
-            status.setText("当前来源没有可用简历，请补充资料或切换来源。"); return;
+                || (mode == URL_FILE && explicitUrl.isEmpty())) {
+            status.setText("请提供简历"); return;
         }
         if (mode == URL_FILE && !isPublicFileUrl(explicitUrl)) {
-            status.setText("请输入合法的公网 http/https 完整文件 URL，不含账号密码、控制字符或本机/私网地址。");
+            status.setText("请填写可公开访问的完整简历文件链接");
             return;
         }
         final AgentApiClient client;
         try { client = new AgentApiClient(key); }
         catch (IllegalArgumentException e) {
-            status.setText("密钥配置无效，请检查 " + definition.configurationName); return;
+            status.setText("服务配置有误，请联系管理员后重试。"); return;
         }
-        // 冻结全部选择参数，工作线程不读取任何控件或可变的文件/历史记录字段。
+        // 冻结全部选择参数，工作线程不读取任何控件或可变的文件字段。
         final Uri selectedUri = fileUri;
-        final String selectedName = filename, selectedMime = mime, selectedToken = downloadToken;
-        final String selectedHistoryName = resumeName;
+        final String selectedName = filename, selectedMime = mime;
         final String summary = initialSummary(definition, planningType, titleText, mode,
-                resumeText, mode == LOCAL ? selectedName : selectedHistoryName)
+                resumeText, selectedName)
                 + (definition == AgentDefinition.INTERVIEW_AGENT ? "\n面试：" + count + " 题 · "
                 + (role == 1 ? "HR综合面试" : "专业面试")
                 + (reference == 1 ? " · 生成参考答案" : " · 不生成参考答案") : "");
@@ -399,19 +371,16 @@ public class AgentStreamActivity extends AppCompatActivity {
         preparing = true;
         preparationClient = client;
         updateButtons();
-        status.setText(mode == HISTORY ? "正在下载并上传历史简历，可取消准备。" : "正在上传文件，可取消准备。");
+        status.setText("正在上传文件，可取消准备。");
         preparationTask = preparationExecutor.submit(() -> {
             try {
                 final String uploadedFile;
-                if (mode == HISTORY) uploadedFile = client.uploadResume(selectedToken);
-                else {
-                    // openInputStream 可能不响应中断；返回后仍交给已取消的 client，确保关闭。
-                    try (InputStream input = getContentResolver().openInputStream(selectedUri)) {
-                        uploadedFile = client.upload(input, selectedName, selectedMime);
-                    }
+                // openInputStream 可能不响应中断；返回后仍交给已取消的 client，确保关闭。
+                try (InputStream input = getContentResolver().openInputStream(selectedUri)) {
+                    uploadedFile = client.upload(input, selectedName, selectedMime);
                 }
                 JsonObject body = definition.buildRequest(planningType, jdText, titleText, "", uploadedFile,
-                        mode == LOCAL ? selectedName : selectedHistoryName, count, role, reference);
+                        selectedName, count, role, reference);
                 runOnUiThread(() -> {
                     if (!isCurrentPreparation(requestGeneration)) return;
                     preparing = false;
@@ -456,7 +425,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             return business + (business.isEmpty() ? "" : "\n") + "简历：" + content.substring(0, end);
         }
         // URL 的路径/查询可能携带凭据，不从 URL 提取文件名，不展示 URL 或下载 token。
-        return business + (business.isEmpty() ? "" : "\n") + "文件：" + (mode == URL_FILE ? "公网URL文件" : (name.isEmpty() ? "未命名" : name));
+        return business + (business.isEmpty() ? "" : "\n") + "文件：" + (mode == URL_FILE ? "在线简历文件" : (name.isEmpty() ? "未命名" : name));
     }
 
     private boolean isCurrentPreparation(long expected) {
@@ -494,7 +463,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         if (begin == null) return;
         begin.setEnabled(!invalidParameters && !preparing);
         for (View view : new View[]{agent, source, careerType, jd, resume, fileUrl, choose,
-                questionNumber, interviewRole, referenceAnswer}) {
+                questionNumber, interviewRole, referenceAnswer, useSample}) {
             view.setEnabled(!preparing);
         }
         cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
@@ -555,7 +524,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         // 保存状态即取消准备，不恢复网络任务或自动重传，旋转后由用户再次确认开始。
         boolean wasPreparing = preparing;
         cancelPreparation();
-        if (wasPreparing) status.setText("页面状态已保存，文件准备已取消；请重新开始。");
+        if (wasPreparing) status.setText("上传已取消，请重新开始");
         super.onSaveInstanceState(state);
         state.putBoolean("invalid_parameters", invalidParameters);
         state.putInt("agent", agent.getSelectedItemPosition());
@@ -571,9 +540,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         state.putString("uri", fileUri == null ? "" : fileUri.toString());
         state.putString("filename", filename);
         state.putString("mime", mime);
-        state.putString("token", downloadToken);
-        state.putString("name", resumeName);
-        if (recordId != null) state.putLong("record", recordId);
         state.putString("status", status.getText().toString());
     }
 
@@ -593,9 +559,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         if (!uri.isEmpty()) fileUri = Uri.parse(uri);
         filename = state.getString("filename", "resume");
         mime = state.getString("mime", "application/octet-stream");
-        downloadToken = state.getString("token", "");
-        resumeName = state.getString("name", "");
-        if (state.containsKey("record")) recordId = state.getLong("record");
         status.setText(state.getString("status", "就绪"));
     }
 
@@ -605,7 +568,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         return layout;
     }
     private int dp(int value) { return UiDecor.dp(this, value); }
-    private static String text(String value) { return value == null ? "" : value.trim(); }
     private void label(LinearLayout parent, String value) { parent.addView(UiDecor.subtitle(this, value)); }
     private Button button(String title) {
         return UiDecor.button(this, title, false);
