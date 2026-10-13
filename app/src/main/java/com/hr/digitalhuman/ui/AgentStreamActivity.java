@@ -112,9 +112,15 @@ public class AgentStreamActivity extends AppCompatActivity {
         context.startActivity(intent);
     }
 
+    @Override protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(newBase);
+        // 与首页使用同一设计密度，避免独立 Activity 恢复设备密度后整页放大。
+        applyDisplayDensity(newBase);
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        applyDisplayDensity(this);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         createViews();
         if (savedInstanceState != null) restore(savedInstanceState);
@@ -126,26 +132,36 @@ public class AgentStreamActivity extends AppCompatActivity {
         updateButtons();
     }
 
+    private void applyDisplayDensity(Context context) {
+        com.hr.digitalhuman.model.RobotConfig config = com.hr.digitalhuman.app.DigitalHumanApp
+                .getInstance().getSessionStore().getConfig();
+        DisplayDensityHelper.apply(context, config == null ? null : config.display);
+    }
+
     private void createViews() {
         LinearLayout root = column();
         root.setBackgroundResource(R.drawable.bg_page);
-        root.setPadding(dp(24), dp(12), dp(24), dp(12));
+        root.setPadding(dp(10), dp(6), dp(10), dp(6));
         LinearLayout header = new LinearLayout(this);
         header.setGravity(android.view.Gravity.CENTER_VERTICAL);
         Button back = button("返回");
         back.setOnClickListener(v -> finish());
-        header.addView(back);
+        back.setBackgroundResource(R.drawable.bg_home_chip);
+        back.setMinimumHeight(dp(28));
+        back.setMinHeight(dp(28));
+        back.setPadding(dp(12), 0, dp(12), 0);
+        header.addView(back, new LinearLayout.LayoutParams(-2, dp(28)));
         TextView heading = UiDecor.title(this, "智能体 · 职业资料分析");
-        heading.setTextSize(18);
+        heading.setTextSize(16);
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
         heading.setGravity(android.view.Gravity.CENTER);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(header);
+        root.addView(header, new LinearLayout.LayoutParams(-1, dp(34)));
 
         // 横屏按“分析配置 / 简历资料”分栏，各自滚动，键盘出现时仍可编辑。
         LinearLayout panels = new LinearLayout(this);
         LinearLayout.LayoutParams panelsLp = new LinearLayout.LayoutParams(-1, 0, 1);
-        panelsLp.topMargin = dp(12);
+        panelsLp.topMargin = dp(6);
         root.addView(panels, panelsLp);
         LinearLayout settings = column();
         LinearLayout inputs = column();
@@ -154,7 +170,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             ScrollView inputScroll = new ScrollView(this);
             inputScroll.setFillViewport(true);
             columns[i].setBackgroundResource(R.drawable.bg_glass_panel);
-            columns[i].setPadding(dp(16), dp(16), dp(16), dp(16));
+            columns[i].setPadding(dp(12), dp(8), dp(12), dp(8));
             inputScroll.addView(columns[i], new ScrollView.LayoutParams(-1, -2));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, i == 0 ? 1f : 1.2f);
             if (i > 0) lp.leftMargin = dp(12);
@@ -196,7 +212,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
-        begin = UiDecor.button(this, "开始", true);
+        begin = button("开始");
+        begin.setBackgroundResource(R.drawable.bg_btn_primary);
+        begin.setTextColor(UiDecor.color(this, R.color.white));
         LinearLayout.LayoutParams beginLp = UiDecor.cardLp(this, 0);
         beginLp.topMargin = dp(12);
         inputs.addView(begin, beginLp);
@@ -570,7 +588,14 @@ public class AgentStreamActivity extends AppCompatActivity {
     private int dp(int value) { return UiDecor.dp(this, value); }
     private void label(LinearLayout parent, String value) { parent.addView(UiDecor.subtitle(this, value)); }
     private Button button(String title) {
-        return UiDecor.button(this, title, false);
+        Button button = UiDecor.button(this, title, false);
+        button.setTextSize(13);
+        button.setMinimumWidth(0);
+        button.setMinWidth(0);
+        button.setMinimumHeight(dp(30));
+        button.setMinHeight(dp(30));
+        button.setPadding(dp(12), dp(4), dp(12), dp(4));
+        return button;
     }
     private Spinner spinner(LinearLayout parent, String... options) {
         Spinner spinner = new androidx.appcompat.widget.AppCompatSpinner(this, Spinner.MODE_DROPDOWN);
