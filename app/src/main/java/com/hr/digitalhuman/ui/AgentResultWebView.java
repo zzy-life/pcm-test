@@ -31,9 +31,10 @@ final class AgentResultWebView extends WebView {
     @SuppressLint("SetJavaScriptEnabled")
     AgentResultWebView(Context context) {
         super(context);
-        setBackgroundColor(Color.rgb(18, 30, 46));
+        setBackgroundColor(Color.TRANSPARENT);
         setSaveEnabled(false);
         WebSettings settings = getSettings();
+        settings.setTextZoom(100);
         settings.setJavaScriptEnabled(true);
         settings.setAllowFileAccess(false);
         settings.setAllowContentAccess(false);

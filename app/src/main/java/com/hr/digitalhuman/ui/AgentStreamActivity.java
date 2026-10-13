@@ -44,7 +44,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2;
     private static final AgentDefinition[] AGENTS = {AgentDefinition.CAREER_AGENT,
             AgentDefinition.DIAGNOSIS_AGENT, AgentDefinition.OPTIMIZATION_AGENT, AgentDefinition.INTERVIEW_AGENT};
-    private static final String SAMPLE_JD = "高级销售专员\n高级销售专员 / 销售主管\n"
+    private static final String SAMPLE_JD = "高级销售专员/ 销售主管\n"
             + "岗位亮点\n行业领先的平台，完善的晋升通道和培训体系\n"
             + "参与核心业务拓展，发挥个人及团队影响力\n丰厚的绩效激励与多元成长机会\n"
             + "岗位职责\n负责公司重点产品的市场开拓与销售，挖掘并维护核心客户资源；\n"
@@ -63,20 +63,20 @@ public class AgentStreamActivity extends AppCompatActivity {
             + "主导或参与过大客户项目及团队管理经历；\n熟练使用CRM系统及办公软件。\n"
             + "薪酬福利\n具有市场竞争力的底薪+高额绩效奖金\n"
             + "五险一金、年度体检、节日福利\n完善的培训体系与多元晋升空间";
-    private static final String SAMPLE_RESUME = "# 个人简历——赵小晴（销售）\n\n"
+    private static final String SAMPLE_RESUME = "个人简历\n"
             + "我叫赵小晴，目前居住在上海市，联系电话为138-XXXX-XXXX，电子邮箱为zhaoxiaoqing@example.com，目前正在寻求销售主管或高级销售专员等进阶销售岗位。\n\n"
-            + "**个人简介**\n\n"
+            + "个人简介\n\n"
             + "我拥有三年专业销售工作经验，具备扎实的客户开发与维护能力，熟悉销售业务流程及团队协作模式。在工作中，我善于与客户沟通，具有较强的目标意识和执行能力，能够独立完成销售任务，并积极推动团队业绩提升。我希望在更具挑战性的销售岗位上持续积累经验、提升专业能力，实现个人职业发展与企业业务增长的共同目标。\n\n"
-            + "**工作经历**\n\n"
+            + "工作经历\n\n"
             + "2019年7月至2022年8月，我在上海某科技有限公司担任销售专员，主要负责B端客户的开发、维护及销售业务拓展。在任职期间，我能够独立完成年度销售额目标，年均销售业绩增长达到20%。通过积极开拓市场，我累计拓展了70余家新客户，并与多个重点客户建立了长期稳定的合作关系，客户续签率超过80%。\n\n"
             + "在业务开展过程中，我积极参与大型项目的投标及商务谈判工作，协助团队成功签约多个百万级订单。同时，我定期开展市场调研，收集和分析行业动态、市场竞争情况及客户需求，为部门制定和优化销售策略提供有效支持。此外，我还承担了部分新员工指导工作，帮助新入职同事熟悉产品知识、销售流程及客户沟通技巧，促进团队整体业务能力与销售业绩提升。\n\n"
-            + "**教育背景**\n\n"
+            + "教育背景\n\n"
             + "2015年9月至2019年6月，我就读于上海师范大学市场营销专业，取得本科学历。在校期间，我系统学习了市场营销相关专业知识，为后续从事销售、客户关系管理及市场分析等工作奠定了基础。\n\n"
-            + "**专业技能**\n\n"
+            + "专业技能\n\n"
             + "我熟悉销售业务全流程，能够熟练运用CRM客户关系管理系统开展客户信息管理、销售跟进及业务分析工作。我具备良好的客户沟通能力、客户关系维护能力及商务谈判技巧，能够根据不同客户需求制定相应的销售方案。同时，我具有一定的市场分析、数据整理及业务报告撰写能力，能够熟练使用Word、Excel、PowerPoint等Office办公软件，满足日常销售管理、数据统计及工作汇报需求。\n\n"
-            + "**自我评价**\n\n"
+            + "自我评价\n\n"
             + "我性格积极乐观，工作态度认真负责，具备较强的抗压能力和自我驱动力。在实际工作中，我坚持以目标为导向，注重执行效率和工作成果，能够快速适应新的工作环境及业务要求，并通过持续努力取得良好业绩。同时，我注重团队合作与沟通协调，具有较强的学习能力和自我提升意识，能够主动总结工作经验，不断优化销售方法，提高专业水平。\n\n"
-            + "**求职意向**\n\n"
+            + "求职意向\n\n"
             + "我希望应聘销售主管或高级销售专员岗位，目标行业包括互联网、科技及快速消费品等领域，期望工作地点为上海市。对于薪资待遇，我持开放态度，具体可根据岗位职责、企业发展情况及个人能力进行面议。";
 
     private Spinner agent, source, careerType;
@@ -112,9 +112,15 @@ public class AgentStreamActivity extends AppCompatActivity {
         context.startActivity(intent);
     }
 
+    @Override protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(newBase);
+        // 与首页使用同一设计密度，避免独立 Activity 恢复设备密度后整页放大。
+        applyDisplayDensity(newBase);
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        applyDisplayDensity(this);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         createViews();
         if (savedInstanceState != null) restore(savedInstanceState);
@@ -126,26 +132,36 @@ public class AgentStreamActivity extends AppCompatActivity {
         updateButtons();
     }
 
+    private void applyDisplayDensity(Context context) {
+        com.hr.digitalhuman.model.RobotConfig config = com.hr.digitalhuman.app.DigitalHumanApp
+                .getInstance().getSessionStore().getConfig();
+        DisplayDensityHelper.apply(context, config == null ? null : config.display);
+    }
+
     private void createViews() {
         LinearLayout root = column();
         root.setBackgroundResource(R.drawable.bg_page);
-        root.setPadding(dp(24), dp(12), dp(24), dp(12));
+        root.setPadding(dp(10), dp(6), dp(10), dp(6));
         LinearLayout header = new LinearLayout(this);
         header.setGravity(android.view.Gravity.CENTER_VERTICAL);
         Button back = button("返回");
         back.setOnClickListener(v -> finish());
-        header.addView(back);
+        back.setBackgroundResource(R.drawable.bg_home_chip);
+        back.setMinimumHeight(dp(28));
+        back.setMinHeight(dp(28));
+        back.setPadding(dp(12), 0, dp(12), 0);
+        header.addView(back, new LinearLayout.LayoutParams(-2, dp(28)));
         TextView heading = UiDecor.title(this, "智能体 · 职业资料分析");
-        heading.setTextSize(18);
+        heading.setTextSize(16);
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
         heading.setGravity(android.view.Gravity.CENTER);
         header.addView(heading, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(header);
+        root.addView(header, new LinearLayout.LayoutParams(-1, dp(34)));
 
         // 横屏按“分析配置 / 简历资料”分栏，各自滚动，键盘出现时仍可编辑。
         LinearLayout panels = new LinearLayout(this);
         LinearLayout.LayoutParams panelsLp = new LinearLayout.LayoutParams(-1, 0, 1);
-        panelsLp.topMargin = dp(12);
+        panelsLp.topMargin = dp(6);
         root.addView(panels, panelsLp);
         LinearLayout settings = column();
         LinearLayout inputs = column();
@@ -154,7 +170,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             ScrollView inputScroll = new ScrollView(this);
             inputScroll.setFillViewport(true);
             columns[i].setBackgroundResource(R.drawable.bg_glass_panel);
-            columns[i].setPadding(dp(16), dp(16), dp(16), dp(16));
+            columns[i].setPadding(dp(12), dp(8), dp(12), dp(8));
             inputScroll.addView(columns[i], new ScrollView.LayoutParams(-1, -2));
             LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(0, -1, i == 0 ? 1f : 1.2f);
             if (i > 0) lp.leftMargin = dp(12);
@@ -196,7 +212,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
-        begin = UiDecor.button(this, "开始", true);
+        begin = button("开始");
+        begin.setBackgroundResource(R.drawable.bg_btn_primary);
+        begin.setTextColor(UiDecor.color(this, R.color.white));
         LinearLayout.LayoutParams beginLp = UiDecor.cardLp(this, 0);
         beginLp.topMargin = dp(12);
         inputs.addView(begin, beginLp);
@@ -570,7 +588,14 @@ public class AgentStreamActivity extends AppCompatActivity {
     private int dp(int value) { return UiDecor.dp(this, value); }
     private void label(LinearLayout parent, String value) { parent.addView(UiDecor.subtitle(this, value)); }
     private Button button(String title) {
-        return UiDecor.button(this, title, false);
+        Button button = UiDecor.button(this, title, false);
+        button.setTextSize(13);
+        button.setMinimumWidth(0);
+        button.setMinWidth(0);
+        button.setMinimumHeight(dp(30));
+        button.setMinHeight(dp(30));
+        button.setPadding(dp(12), dp(4), dp(12), dp(4));
+        return button;
     }
     private Spinner spinner(LinearLayout parent, String... options) {
         Spinner spinner = new androidx.appcompat.widget.AppCompatSpinner(this, Spinner.MODE_DROPDOWN);

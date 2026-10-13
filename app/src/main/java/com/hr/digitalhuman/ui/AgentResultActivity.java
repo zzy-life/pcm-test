@@ -125,9 +125,15 @@ public final class AgentResultActivity extends AppCompatActivity {
     private TextView heading;
     private final Runnable renderTick = this::parseLatest;
 
+    @Override protected void attachBaseContext(Context newBase) {
+        super.attachBaseContext(newBase);
+        // 与首页使用同一设计密度，避免独立 Activity 恢复设备密度后整页放大。
+        applyDisplayDensity(newBase);
+    }
+
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN);
+        applyDisplayDensity(this);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         createViews();
         readAndValidateIntent();
@@ -170,16 +176,22 @@ public final class AgentResultActivity extends AppCompatActivity {
         updateButtons();
     }
 
+    private void applyDisplayDensity(Context context) {
+        com.hr.digitalhuman.model.RobotConfig config = com.hr.digitalhuman.app.DigitalHumanApp
+                .getInstance().getSessionStore().getConfig();
+        DisplayDensityHelper.apply(context, config == null ? null : config.display);
+    }
+
     private void createViews() {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(0xFF0B1523);
-        root.setPadding(dp(8), dp(6), dp(8), dp(8));
+        root.setBackgroundResource(R.drawable.bg_page);
+        root.setPadding(dp(10), dp(6), dp(10), dp(6));
         LinearLayout top = new LinearLayout(this);
         top.setOrientation(LinearLayout.HORIZONTAL);
         top.setGravity(android.view.Gravity.CENTER_VERTICAL);
         heading = UiDecor.title(this, "智能体 · 对话");
-        heading.setTextSize(18);
+        heading.setTextSize(16);
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
         heading.setSingleLine(true);
         heading.setEllipsize(android.text.TextUtils.TruncateAt.END);
@@ -203,16 +215,16 @@ public final class AgentResultActivity extends AppCompatActivity {
             actions.addView(action, lp);
         }
         actionsScroll.addView(actions);
-        top.addView(actionsScroll, new LinearLayout.LayoutParams(-2, dp(40)));
-        root.addView(top);
+        top.addView(actionsScroll, new LinearLayout.LayoutParams(-2, dp(28)));
+        root.addView(top, new LinearLayout.LayoutParams(-1, dp(34)));
 
         LinearLayout conversation = new LinearLayout(this);
         conversation.setOrientation(LinearLayout.VERTICAL);
-        conversation.setBackground(surface(0xFF121E2E, 16));
-        conversation.setPadding(dp(4), dp(4), dp(4), dp(4));
+        conversation.setBackgroundResource(R.drawable.bg_ai_dialog);
+        conversation.setPadding(dp(8), dp(6), dp(8), dp(6));
         conversation.setClipToOutline(true);
         LinearLayout.LayoutParams conversationLp = new LinearLayout.LayoutParams(-1, 0, 1);
-        conversationLp.topMargin = dp(8);
+        conversationLp.topMargin = dp(6);
         root.addView(conversation, conversationLp);
 
         status = UiDecor.subtitle(this, "输入消息开始对话。");
@@ -229,16 +241,17 @@ public final class AgentResultActivity extends AppCompatActivity {
         root.addView(status);
         LinearLayout inputRow = new LinearLayout(this);
         inputRow.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        inputRow.setBackground(surface(0xFF0C1826, 24));
-        inputRow.setPadding(dp(4), dp(3), dp(4), dp(3));
+        inputRow.setBackgroundResource(R.drawable.bg_input);
+        inputRow.setMinimumHeight(dp(40));
+        inputRow.setPadding(dp(6), dp(3), dp(6), dp(3));
         microphone = new android.widget.ImageButton(this);
         microphone.setImageResource(R.drawable.ic_home_mic);
         microphone.setBackground(surface(0xFF0C1826, 20));
-        microphone.setPadding(dp(10), dp(10), dp(10), dp(10));
+        microphone.setPadding(dp(7), dp(7), dp(7), dp(7));
         microphone.setContentDescription("开始语音输入");
-        inputRow.addView(microphone, new LinearLayout.LayoutParams(dp(40), dp(40)));
+        inputRow.addView(microphone, new LinearLayout.LayoutParams(dp(30), dp(30)));
         microphone.setOnClickListener(v -> toggleVoice());
-        send.setBackground(surface(0xFF2F7CFF, 20));
+        send.setBackgroundResource(R.drawable.bg_btn_primary);
         send.setTextColor(0xFFFFFFFF);
         composer = new EditText(this);
         composer.setSaveEnabled(false);
@@ -246,14 +259,14 @@ public final class AgentResultActivity extends AppCompatActivity {
         composer.setPadding(dp(8), dp(6), dp(8), dp(6));
         composer.setTextColor(UiDecor.color(this, R.color.text));
         composer.setHintTextColor(UiDecor.color(this, R.color.text_dim));
-        composer.setTextSize(16);
+        composer.setTextSize(14);
         composer.setBackgroundColor(android.graphics.Color.TRANSPARENT);
         composer.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE);
         composer.setMaxLines(4);
         composer.setFilters(new android.text.InputFilter[]{new android.text.InputFilter.LengthFilter(MAX_INPUT)});
         inputRow.addView(composer, new LinearLayout.LayoutParams(0, -2, 1));
-        inputRow.addView(send, new LinearLayout.LayoutParams(-2, dp(40)));
+        inputRow.addView(send, new LinearLayout.LayoutParams(-2, dp(30)));
         LinearLayout.LayoutParams inputLp = new LinearLayout.LayoutParams(-1, -2);
         inputLp.topMargin = dp(6);
         root.addView(inputRow, inputLp);
@@ -728,12 +741,13 @@ public final class AgentResultActivity extends AppCompatActivity {
     private Button button(String text) {
         Button button = UiDecor.button(this, text, false);
         button.setTextSize(13);
+        button.setSingleLine(true);
         button.setMinimumWidth(0);
         button.setMinWidth(0);
-        button.setMinimumHeight(dp(40));
-        button.setMinHeight(dp(40));
-        button.setBackground(surface(0xFF18283D, 20));
-        button.setPadding(dp(14), 0, dp(14), 0);
+        button.setMinimumHeight(dp(28));
+        button.setMinHeight(dp(28));
+        button.setBackgroundResource(R.drawable.bg_home_chip);
+        button.setPadding(dp(12), 0, dp(12), 0);
         return button;
     }
 }
