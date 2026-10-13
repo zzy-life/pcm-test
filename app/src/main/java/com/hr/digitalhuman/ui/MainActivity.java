@@ -295,6 +295,16 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
         presenceTracker.start(new PersonPresenceTracker.Listener() {
             @Override
             public void onPresenceChanged(boolean present) {
+                if (app.isAgentPageVisible()) {
+                    // 智能体页由临时采集者控制；桥接仍校验人员、暂停及播报门禁。
+                    bridge.enableListening();
+                    if (!present) {
+                        mainHandler.postDelayed(() -> {
+                            if (app.isAgentPageVisible()) bridge.enableListening();
+                        }, 3200);
+                    }
+                    return;
+                }
                 ResumeCenterFragment resume = currentResumeCenter();
                 if (resume != null && resume.isChatMode()) {
                     if (present && resume.isVoiceCapturing()) {
@@ -309,7 +319,9 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
                     bridge.enableListening();
                     if (!present) {
                         mainHandler.postDelayed(() -> {
-                            if (!presenceTracker.isVoiceEligible()) {
+                            if (app.isAgentPageVisible()) {
+                                bridge.enableListening();
+                            } else if (!presenceTracker.isVoiceEligible()) {
                                 bridge.disableListening();
                             }
                         }, 3200);
@@ -441,6 +453,10 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
      * 简历采集场景下同步开/关麦：默认关；仅「语音讲话」且面前有人时开。
      */
     public void syncResumeListening() {
+        if (app.isAgentPageVisible()) {
+            bridge.enableListening();
+            return;
+        }
         ResumeCenterFragment resume = currentResumeCenter();
         if (resume != null && resume.isChatMode()) {
             if (resume.isVoiceCapturing() && presenceTracker.isVoiceEligible()) {
