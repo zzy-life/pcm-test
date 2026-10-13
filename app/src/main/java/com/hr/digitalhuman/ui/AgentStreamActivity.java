@@ -96,6 +96,17 @@ public class AgentStreamActivity extends AppCompatActivity {
     private String filename = "resume", mime = "application/octet-stream";
     private boolean initializing = true;
     private int lastAgent, lastSource, lastType;
+    private static final int AUDIO_PERMISSION = 6102;
+    private Button jdVoice, resumeVoice;
+    private EditText voiceTarget;
+    private boolean resumed, applyingVoice;
+    private String voiceBase = "";
+    private com.hr.digitalhuman.robot.RobotSdkBridge voiceBridge;
+    private final com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener voiceListener =
+            new com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener() {
+                public void onAsrPartial(String text) { applyVoice(text, false); }
+                public void onAsrResult(String text) { applyVoice(text, true); }
+            };
 
     public static void start(Context context) {
         launch(context, new Intent(context, AgentStreamActivity.class));
@@ -182,6 +193,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         agent = spinner(settings, names);
         careerType = spinner(settings, "晋升路径", "转型建议");
         jd = editor(settings, "岗位招聘要求", 4);
+        jdVoice = button("语音输入岗位要求");
+        settings.addView(jdVoice, UiDecor.cardLp(this, 8));
+        jdVoice.setOnClickListener(v -> toggleVoice(jd));
         useSample = button("使用示例数据");
         settings.addView(useSample, UiDecor.cardLp(this, 8));
         useSample.setOnClickListener(v -> {
@@ -206,6 +220,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         label(inputs, "简历来源");
         source = spinner(inputs, "手动填写简历", "上传本地简历文件", "在线简历文件链接");
         resume = editor(inputs, "简历正文", 5);
+        resumeVoice = button("语音输入简历");
+        inputs.addView(resumeVoice, UiDecor.cardLp(this, 8));
+        resumeVoice.setOnClickListener(v -> toggleVoice(resume));
         fileUrl = editor(inputs, "简历文件链接", 2);
         choose = button("选择本地文件（最多 50MB）");
         inputs.addView(choose, UiDecor.cardLp(this, 8));
@@ -228,6 +245,84 @@ public class AgentStreamActivity extends AppCompatActivity {
         status = UiDecor.subtitle(this, "");
         inputs.addView(status);
         setContentView(root);
+    }
+
+    private void toggleVoice(EditText target) {
+        if (voiceTarget == target) { endVoice(); return; }
+        endVoice();
+        if (!resumed || preparing || invalidParameters || isFinishing() || isDestroyed()
+                || target.getVisibility() != View.VISIBLE || !target.isEnabled()) return;
+        if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
+                != android.content.pm.PackageManager.PERMISSION_GRANTED) {
+            androidx.core.app.ActivityCompat.requestPermissions(this,
+                    new String[]{android.Manifest.permission.RECORD_AUDIO}, AUDIO_PERMISSION);
+            return;
+        }
+        voiceBridge = com.hr.digitalhuman.app.DigitalHumanApp.getInstance().getRobotBridge();
+        String reason = voiceBridge == null ? "语音服务未连接，请稍后重试"
+                : voiceBridge.voiceCaptureUnavailableReason();
+        if (reason != null || !voiceBridge.beginVoiceCapture(voiceListener)) {
+            status.setText(reason == null ? "语音未能开启，请重试或使用文字输入" : reason);
+            return;
+        }
+        voiceBase = target.getText().toString();
+        voiceTarget = target;
+        updateVoiceButtons();
+        status.setText(target == jd ? "正在聆听岗位要求，结束后请确认资料" : "正在聆听简历，结束后请确认资料");
+    }
+
+    private void applyVoice(String text, boolean complete) {
+        EditText target = voiceTarget;
+        if (target == null || !resumed || preparing || isFinishing() || isDestroyed()
+                || text == null || text.trim().isEmpty()) return;
+        // partial 始终替换本次预览，不把同一句话反复追加。
+        String value = voiceBase + (voiceBase.isEmpty() || voiceBase.endsWith("\n") ? "" : "\n") + text.trim();
+        int end = Math.min(value.length(), MAX_INPUT_CHARS);
+        if (end > 0 && end < value.length() && Character.isHighSurrogate(value.charAt(end - 1))) --end;
+        applyingVoice = true;
+        try {
+            target.setText(value.substring(0, end));
+            target.setSelection(target.length());
+        } finally {
+            applyingVoice = false;
+        }
+        if (complete) endVoice();
+    }
+
+    private void endVoice() {
+        boolean wasCapturing = voiceTarget != null;
+        voiceTarget = null;
+        if (voiceBridge != null) voiceBridge.endVoiceCapture(voiceListener);
+        updateVoiceButtons();
+        if (wasCapturing && status != null) status.setText("语音已填入，请确认资料后点击开始");
+    }
+
+    private void updateVoiceButtons() {
+        if (jdVoice == null || resumeVoice == null) return;
+        jdVoice.setText(voiceTarget == jd ? "结束语音输入" : "语音输入岗位要求");
+        resumeVoice.setText(voiceTarget == resume ? "结束语音输入" : "语音输入简历");
+        jdVoice.setEnabled(resumed && !preparing && !invalidParameters);
+        resumeVoice.setEnabled(resumed && !preparing && !invalidParameters);
+    }
+
+    @Override protected void onResume() {
+        super.onResume();
+        resumed = true;
+        updateVoiceButtons();
+    }
+
+    @Override protected void onPause() {
+        resumed = false;
+        endVoice();
+        super.onPause();
+    }
+
+    @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(code, permissions, results);
+        if (code != AUDIO_PERMISSION) return;
+        // 授权后由用户重新选择目标，避免权限窗口/切后台后的迟到回调自动开麦。
+        status.setText(results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+                ? "已授权，请再次点击需要输入的语音按钮" : "未授予麦克风权限，请使用文字输入");
     }
 
     private void readIntent() {
@@ -275,19 +370,23 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void updateAgent() {
+        endVoice();
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         boolean career = definition == AgentDefinition.CAREER_AGENT;
         boolean interview = definition == AgentDefinition.INTERVIEW_AGENT;
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);
         interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
         jd.setVisibility(career ? View.GONE : View.VISIBLE);
+        jdVoice.setVisibility(career ? View.GONE : View.VISIBLE);
         jd.setHint(definition == AgentDefinition.OPTIMIZATION_AGENT
                 ? "岗位招聘要求（选填）" : "岗位招聘要求（必填）");
     }
 
     private void updateSource() {
+        endVoice();
         int mode = source.getSelectedItemPosition();
         resume.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
+        resumeVoice.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
         fileUrl.setVisibility(mode == URL_FILE ? View.VISIBLE : View.GONE);
         choose.setVisibility(mode == LOCAL ? View.VISIBLE : View.GONE);
         fileInfo.setVisibility(mode == LOCAL && fileUri != null ? View.VISIBLE : View.GONE);
@@ -295,6 +394,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void openDocument() {
+        endVoice();
         Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
         pick.setType("*/*");
@@ -330,6 +430,7 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void startRequest() {
         if (invalidParameters || preparing || isFinishing() || isDestroyed()) return;
+        endVoice();
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         String key = definition.apiKey();
         if (key == null || key.trim().isEmpty()) {
@@ -467,11 +568,13 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     @Override public void finish() {
+        endVoice();
         cancelPreparation();
         super.finish();
     }
 
     @Override protected void onDestroy() {
+        endVoice();
         cancelPreparation();
         preparationExecutor.shutdown();
         super.onDestroy();
@@ -486,6 +589,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         }
         cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
         cancel.setEnabled(preparing);
+        updateVoiceButtons();
     }
 
     /** 纯 URI/字面量校验，不查询 DNS；域名实际解析和重定向的安全边界需由服务端保证。 */
@@ -539,6 +643,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     @Override protected void onSaveInstanceState(Bundle state) {
+        endVoice();
         // 保存状态即取消准备，不恢复网络任务或自动重传，旋转后由用户再次确认开始。
         boolean wasPreparing = preparing;
         cancelPreparation();
@@ -648,6 +753,13 @@ public class AgentStreamActivity extends AppCompatActivity {
         field.setGravity(android.view.Gravity.TOP | android.view.Gravity.START);
         field.setInputType(android.text.InputType.TYPE_CLASS_TEXT
                 | (lines > 1 ? android.text.InputType.TYPE_TEXT_FLAG_MULTI_LINE : 0));
+        field.addTextChangedListener(new android.text.TextWatcher() {
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+                if (voiceTarget != null && !applyingVoice) endVoice();
+            }
+            public void afterTextChanged(android.text.Editable s) {}
+        });
         LinearLayout.LayoutParams lp = UiDecor.cardLp(this, 8);
         lp.topMargin = dp(6);
         parent.addView(field, lp);

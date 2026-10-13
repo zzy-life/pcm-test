@@ -114,9 +114,12 @@ public class RobotSdkBridge {
         }
         synchronized (this) {
             if (voiceCaptureListener != null && voiceCaptureListener != listener) {
+                DebugLog.w(TAG, "voice capture rejected: owned by another listener");
                 return false;
             }
-            if (!isChassisReady() || !isSkillConnected() || !allowVoiceInput("capture")) {
+            String unavailable = voiceCaptureUnavailableReason();
+            if (unavailable != null) {
+                DebugLog.w(TAG, "voice capture rejected: " + unavailable);
                 return false;
             }
             if (voiceCaptureListener == null) {
@@ -126,11 +129,21 @@ public class RobotSdkBridge {
             enableListening();
             if (!isRecognizable()) {
                 // 开麦失败也结束本代次，防止已排队的结果泄漏到默认页面。
+                DebugLog.w(TAG, "voice capture rejected: SDK recognizer not enabled");
                 endVoiceCapture(listener);
                 return false;
             }
             return true;
         }
+    }
+
+    /** 与首页共用门禁；仅返回操作提示，不包含识别正文或个人资料。 */
+    public String voiceCaptureUnavailableReason() {
+        if (!isChassisReady() || !isSkillConnected()) return "语音服务未连接，请稍后重试";
+        if (DigitalHumanApp.getInstance().getSessionStore().isDemoMode()) return "已暂停聆听，请返回首页恢复";
+        if (ttsPlaying) return "正在播报，请结束播报后重试";
+        if (presenceTracker != null && !presenceTracker.shouldAcceptAsr()) return "请站到机器人识别范围内后重试";
+        return null;
     }
 
     /** 仅释放当前采集者；先使排队回调失效，再关闭识别，不恢复默认页面拾音。 */

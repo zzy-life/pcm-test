@@ -206,7 +206,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         stop = button("停止");
         send = button("发送");
         latest = button("回到底部");
-        getResult = button("获取结果");
+        getResult = button("复制结果");
         getResult.setOnClickListener(v -> startReportPolling());
         actions.addView(back);
         for (Button action : new Button[]{stop, latest, getResult}) {
@@ -295,8 +295,10 @@ public final class AgentResultActivity extends AppCompatActivity {
             return;
         }
         voiceBridge = com.hr.digitalhuman.app.DigitalHumanApp.getInstance().getRobotBridge();
-        if (voiceBridge == null || !voiceBridge.beginVoiceCapture(voiceListener)) {
-            status.setText("机器人语音暂不可用，请确认服务连接、非演示模式、未播报且有人在识别范围内。");
+        String reason = voiceBridge == null ? "语音服务未连接，请稍后重试"
+                : voiceBridge.voiceCaptureUnavailableReason();
+        if (reason != null || !voiceBridge.beginVoiceCapture(voiceListener)) {
+            status.setText(reason == null ? "语音未能开启，请重试或使用文字输入" : reason);
             return;
         }
         voiceBase = composer.getText().toString();
@@ -311,10 +313,14 @@ public final class AgentResultActivity extends AppCompatActivity {
         String value = voiceBase + (voiceBase.isEmpty() || voiceBase.endsWith("\n") ? "" : "\n") + text.trim();
         value = value.substring(0, safeEnd(value, MAX_INPUT));
         applyingVoice = true;
-        composer.setText(value);
-        composer.setSelection(composer.length());
-        applyingVoice = false;
-        if (complete) voiceBase = value;
+        try {
+            composer.setText(value);
+            composer.setSelection(composer.length());
+        } finally {
+            applyingVoice = false;
+        }
+        // 一次采集在最终识别后结束，避免下一句 partial 再追加同一句最终文本。
+        if (complete) endVoice();
     }
 
     private void endVoice() {
@@ -338,8 +344,8 @@ public final class AgentResultActivity extends AppCompatActivity {
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code == AUDIO_PERMISSION) {
-            if (results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED) toggleVoice();
-            else status.setText("未授予麦克风权限，请使用文字输入。");
+            status.setText(results.length > 0 && results[0] == android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ? "已授权，请再次点击麦克风开始输入" : "未授予麦克风权限，请使用文字输入");
         }
     }
 
