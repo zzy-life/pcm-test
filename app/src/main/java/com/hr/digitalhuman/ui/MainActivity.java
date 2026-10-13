@@ -68,8 +68,6 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     private boolean navFinished;
     private boolean agentPagePaused;
     private boolean standbyPendingAfterAgent;
-    // 仅手动跳过初始化时启用，避免无机器人调试被无人待机计时打断。
-    private boolean initializationSkipped;
     /** 回到待机必须同时满足：距上次点击超过此时长，且 1.5 米内无人。 */
     private static final long STANDBY_AFTER_CLICK_MS = 20_000L;
     private long lastClickAt = System.currentTimeMillis();
@@ -92,7 +90,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
 
     private void scheduleStandbyRecheck() {
         mainHandler.removeCallbacks(standbyRecheck);
-        if (fsm == null || initializationSkipped) {
+        if (fsm == null) {
             return;
         }
         RobotState state = fsm.getState();
@@ -214,9 +212,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
                         });
                         return;
                     }
-                    mainHandler.post(() -> {
-                        if (!initializationSkipped) enterStandby();
-                    });
+                    mainHandler.post(() -> enterStandby());
                 });
             }
         });
@@ -463,7 +459,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
      * 播报/思考/迎宾不永久拦住：人已离开且点击已满 20 秒时停播并回待机。
      */
     private void requestStandby(String reason) {
-        if (initializationSkipped || app.isAgentPageVisible()) return;
+        if (app.isAgentPageVisible()) return;
         RobotState state = fsm.getState();
         if (state == RobotState.STANDBY || state == RobotState.INIT || state == RobotState.SUSPENDED) {
             return;
@@ -654,24 +650,10 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
         });
     }
 
-    /** 无机器人时手动进入首页，不伪造连接状态或设备 SN。 */
-    public void enterSystemForDebug() {
-        Fragment current = getSupportFragmentManager().findFragmentById(R.id.fragment_container);
-        if (current instanceof InitFragment) {
-            initializationSkipped = true;
-            // 沿用状态机已有的 INIT → STANDBY → HOME 路径，不启动待机硬件流程。
-            fsm.transition(RobotState.STANDBY, "skip_initialization");
-            fsm.cancelIdleTimer();
-            mainHandler.removeCallbacks(standbyRecheck);
-        }
-        goHomeClearBackStack();
-    }
-
     public void enterHome() {
         fsm.transition(RobotState.HOME, "enter_home");
         homeFragment = new HomeFragment();
         showFragment(homeFragment, false);
-        if (initializationSkipped) return;
         startPresenceTracking();
         bridge.enableListening();
         focusFollowController.releaseWelcomeSpeechHold();
@@ -681,7 +663,6 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     }
 
     public void resetIdle() {
-        if (initializationSkipped) return;
         fsm.resetIdleTimer(this::onSessionIdle);
     }
 
