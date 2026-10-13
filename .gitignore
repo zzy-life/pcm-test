@@ -119,3 +119,4 @@ sentry.properties
 # .hg/
 # .git/
 /.claude
+/CLAUDE.md

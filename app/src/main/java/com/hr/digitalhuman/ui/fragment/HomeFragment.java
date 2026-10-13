@@ -19,6 +19,8 @@ import androidx.core.content.ContextCompat;
 import androidx.fragment.app.Fragment;
 
 import com.hr.digitalhuman.R;
+import com.hr.digitalhuman.agents.AgentDefinition;
+import com.hr.digitalhuman.ui.AgentStreamActivity;
 import com.hr.digitalhuman.app.DigitalHumanApp;
 import com.hr.digitalhuman.app.SessionStore;
 import com.hr.digitalhuman.model.RobotConfig;
@@ -118,6 +120,7 @@ public class HomeFragment extends Fragment {
         });
         showIdleWelcome(name, sloganText);
 
+        addAgentEntries();
         if (config != null && config.homeQuickTags != null && !config.homeQuickTags.isEmpty()) {
             for (RobotConfig.QuickTag tag : config.homeQuickTags) {
                 addQuickTag(tag.label, tag.presetQuestion);
@@ -314,6 +317,7 @@ public class HomeFragment extends Fragment {
         }
         if (quickTags != null) {
             quickTags.removeAllViews();
+            addAgentEntries();
             if (config != null && config.homeQuickTags != null && !config.homeQuickTags.isEmpty()) {
                 for (RobotConfig.QuickTag tag : config.homeQuickTags) {
                     addQuickTag(tag.label, tag.presetQuestion);
@@ -324,6 +328,19 @@ public class HomeFragment extends Fragment {
                 addQuickTag("带路", "请带我去社保窗口");
             }
         }
+    }
+
+    private void addAgentEntries() {
+        addAgentEntry("简历诊断", AgentDefinition.RESUME_DIAGNOSIS);
+        addAgentEntry("职业规划", AgentDefinition.CAREER);
+        addAgentEntry("简历优化", AgentDefinition.RESUME_OPTIMIZATION);
+        addAgentEntry("面试模拟", AgentDefinition.MOCK_INTERVIEW);
+    }
+
+    private void addAgentEntry(String label, String agentId) {
+        TextView chip = actionChip(label, iconFor(label));
+        chip.setOnClickListener(view -> AgentStreamActivity.start(requireContext(), agentId));
+        quickTags.addView(chip);
     }
 
     private void addQuickTag(String label, String question) {

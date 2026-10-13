@@ -51,11 +51,10 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
             existing.bringToFront();
             return;
         }
-        TextView entry = UiDecor.chip(activity, "智能体");
+        TextView entry = UiDecor.chip(activity, "进入系统");
         entry.setTag(TAG);
         entry.setGravity(Gravity.CENTER);
-        entry.setContentDescription(isAgentActivity(activity)
-                ? "当前为智能体分析页面" : "打开智能体分析页面");
+        entry.setContentDescription("跳过机器人初始化，进入系统首页");
         entry.setClickable(true);
         entry.setFocusable(true);
         entry.setMinHeight(UiDecor.dp(activity, 48));
@@ -65,10 +64,9 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
         params.setMargins(UiDecor.dp(activity, 16), UiDecor.dp(activity, 16),
                 UiDecor.dp(activity, 16), UiDecor.dp(activity, 16));
         content.addView(entry, params);
-        if (isAgentActivity(activity)) entry.setEnabled(false);
         entry.setOnClickListener(v -> {
-            if (!(isAgentActivity(activity))) {
-                AgentStreamActivity.start(activity);
+            if (activity instanceof MainActivity) {
+                ((MainActivity) activity).enterSystemForDebug();
             }
         });
     }

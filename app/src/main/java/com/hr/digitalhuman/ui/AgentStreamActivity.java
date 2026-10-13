@@ -78,6 +78,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         launch(context, new Intent(context, AgentStreamActivity.class));
     }
 
+    public static void start(Context context, String agentId) {
+        Intent intent = new Intent(context, AgentStreamActivity.class);
+        intent.putExtra(EXTRA_AGENT_ID, agentId);
+        launch(context, intent);
+    }
+
     public static void startWithResume(Context context, String downloadToken, String resumeName,
                                        String targetPosition, Long recordId) {
         Intent intent = new Intent(context, AgentStreamActivity.class);
