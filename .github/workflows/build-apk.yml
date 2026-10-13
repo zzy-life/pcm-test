@@ -3,7 +3,7 @@ name: Build Android APK
 on:
   workflow_dispatch:
   push:
-    branches: [master]
+    branches: [test]
     paths:
       - 'app/**'
       - '*.gradle'
@@ -90,7 +90,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: hrRobot-debug-${{ github.run_number }}
+          name: hrRobot-debug-${{ github.ref_name }}-${{ github.run_number }}
           path: app/build/outputs/apk/debug/hrRobot.apk
           if-no-files-found: error
           retention-days: 14
