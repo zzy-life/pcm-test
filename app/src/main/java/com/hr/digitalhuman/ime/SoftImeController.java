@@ -8,7 +8,6 @@ import android.text.InputType;
 import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.ViewTreeObserver;
 import android.view.WindowManager;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.EditText;
@@ -29,7 +28,9 @@ public final class SoftImeController {
     private SoftImePanel panel;
     private FrameLayout overlayHost;
     private EditText current;
-    private ViewTreeObserver.OnGlobalLayoutListener layoutListener;
+    private View contentHost;
+    private int originalPaddingBottom;
+    private Runnable beforeShow;
 
     public static synchronized SoftImeController get() {
         if (instance == null) {
@@ -41,12 +42,20 @@ public final class SoftImeController {
     private SoftImeController() {
     }
 
-    /** 在 MainActivity.onCreate 调用一次 */
     public void attach(Activity activity) {
-        if (activity == null) {
-            return;
+        if (activity != null) attach(activity, activity.findViewById(R.id.fragment_container), null);
+    }
+
+    /** 前台页面接管键盘；先释放旧宿主，避免浮层和输入目标跨 Activity 残留。 */
+    public void attach(Activity activity, View content, Runnable beforeShow) {
+        if (activity == null) return;
+        if (activity() != activity || contentHost != content) {
+            detach();
+            activityRef = new WeakReference<>(activity);
+            contentHost = content;
+            originalPaddingBottom = content == null ? 0 : content.getPaddingBottom();
         }
-        activityRef = new WeakReference<>(activity);
+        this.beforeShow = beforeShow;
         activity.getWindow().setSoftInputMode(
                 WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
         ensureOverlay(activity);
@@ -65,6 +74,17 @@ public final class SoftImeController {
         panel = null;
         current = null;
         activityRef = null;
+        contentHost = null;
+        beforeShow = null;
+    }
+
+    /** 后台页面只能释放自己的键盘，不能清理新的前台宿主。 */
+    public void detach(Activity owner) {
+        if (activity() == owner) detach();
+    }
+
+    public void hide(Activity owner) {
+        if (activity() == owner) hide();
     }
 
     /** 绑定单个输入框 */
@@ -73,25 +93,7 @@ public final class SoftImeController {
             return;
         }
         disableSystemIme(editText);
-        editText.setOnFocusChangeListener(new View.OnFocusChangeListener() {
-            @Override
-            public void onFocusChange(View v, boolean hasFocus) {
-                if (hasFocus) {
-                    showFor(editText);
-                } else if (current == editText) {
-                    // 延迟判断：点键盘时焦点可能短暂丢失
-                    v.postDelayed(new Runnable() {
-                        @Override
-                        public void run() {
-                            if (current == editText && (panel == null || !panel.hasFocus())
-                                    && !editText.hasFocus()) {
-                                // 保持显示，直到显式收起或切换目标
-                            }
-                        }
-                    }, 80);
-                }
-            }
-        });
+        // 仅明确点击/触摸时显示，避免布局自动分配焦点或收起后焦点回弹再次开键盘。
         editText.setOnClickListener(new View.OnClickListener() {
             @Override
             public void onClick(View v) {
@@ -129,9 +131,11 @@ public final class SoftImeController {
 
     public void showFor(EditText editText) {
         Activity activity = activity();
-        if (activity == null || editText == null) {
+        if (activity == null || editText == null || !editText.isEnabled()
+                || !editText.isShown() || !editText.getRootView().equals(activity.getWindow().getDecorView())) {
             return;
         }
+        if (beforeShow != null) beforeShow.run();
         ensureOverlay(activity);
         hideSystemIme(editText);
         current = editText;
@@ -183,10 +187,9 @@ public final class SoftImeController {
         panel.setListener(new SoftImePanel.Listener() {
             @Override
             public void onHideRequested() {
+                EditText target = current;
                 hide();
-                if (current != null) {
-                    current.clearFocus();
-                }
+                if (target != null) target.clearFocus();
             }
         });
         panel.addOnLayoutChangeListener(new View.OnLayoutChangeListener() {
@@ -209,17 +212,19 @@ public final class SoftImeController {
         if (activity == null || panel == null) {
             return;
         }
-        final View content = activity.findViewById(R.id.fragment_container);
+        final View content = contentHost;
+        final SoftImePanel expectedPanel = panel;
         if (content == null) {
             return;
         }
         panel.post(new Runnable() {
             @Override
             public void run() {
-                if (!isShowing()) {
+                if (!isShowing() || panel != expectedPanel || activity() != activity
+                        || contentHost != content || current != editText) {
                     return;
                 }
-                int h = panel.getHeight() + dp(activity, 12);
+                int h = originalPaddingBottom + panel.getHeight() + dp(activity, 12);
                 if (h > dp(activity, 12) && content.getPaddingBottom() != h) {
                     content.setPadding(content.getPaddingLeft(), content.getPaddingTop(),
                             content.getPaddingRight(), h);
@@ -228,7 +233,8 @@ public final class SoftImeController {
                     editText.post(new Runnable() {
                         @Override
                         public void run() {
-                            scrollTargetAboveKeyboard(editText);
+                            if (activity() == activity && panel == expectedPanel
+                                    && current == editText && isShowing()) scrollTargetAboveKeyboard(editText);
                         }
                     });
                 }
@@ -241,10 +247,10 @@ public final class SoftImeController {
         if (activity == null) {
             return;
         }
-        View content = activity.findViewById(R.id.fragment_container);
-        if (content != null && content.getPaddingBottom() != 0) {
+        View content = contentHost;
+        if (content != null && content.getPaddingBottom() != originalPaddingBottom) {
             content.setPadding(content.getPaddingLeft(), content.getPaddingTop(),
-                    content.getPaddingRight(), 0);
+                    content.getPaddingRight(), originalPaddingBottom);
         }
     }
 

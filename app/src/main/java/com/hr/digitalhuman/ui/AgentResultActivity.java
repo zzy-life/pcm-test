@@ -17,6 +17,7 @@ import androidx.appcompat.app.AppCompatActivity;
 
 import com.google.gson.JsonObject;
 import com.hr.digitalhuman.R;
+import com.hr.digitalhuman.ime.SoftImeController;
 import com.hr.digitalhuman.agents.AgentApiClient;
 
 import java.io.IOException;
@@ -283,9 +284,11 @@ public final class AgentResultActivity extends AppCompatActivity {
         back.setOnClickListener(v -> finish());
         stop.setOnClickListener(v -> stopRequest("已停止，保留当前回复。"));
         setContentView(root);
+        SoftImeController.get().bind(composer);
     }
 
     private void toggleVoice() {
+        SoftImeController.get().hide(this);
         if (capturing) { endVoice(); return; }
         if (!resumed || running || polling || invalid || destroyed) return;
         if (androidx.core.content.ContextCompat.checkSelfPermission(this, android.Manifest.permission.RECORD_AUDIO)
@@ -337,9 +340,16 @@ public final class AgentResultActivity extends AppCompatActivity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        SoftImeController.get().attach(this,
+                ((android.view.ViewGroup) findViewById(android.R.id.content)).getChildAt(0), this::endVoice);
         updateButtons();
     }
-    @Override protected void onPause() { resumed = false; endVoice(); super.onPause(); }
+    @Override protected void onPause() {
+        resumed = false;
+        endVoice();
+        SoftImeController.get().detach(this);
+        super.onPause();
+    }
 
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
@@ -400,6 +410,7 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void startRequest(String query) {
         if (running || polling || invalid || destroyed) return;
+        SoftImeController.get().hide(this);
         endVoice();
         final boolean first = turns == 0;
         if (query.trim().isEmpty() || query.length() > MAX_INPUT
@@ -516,6 +527,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     private void startReportPolling() {
         if (!sseCompleted || running || polling || invalid || destroyed
                 || conversationId.isEmpty()) return;
+        SoftImeController.get().hide(this);
         endVoice();
         polling = true;
         attempts = 0;
@@ -661,7 +673,12 @@ public final class AgentResultActivity extends AppCompatActivity {
         }
     }
 
+    @Override public void onBackPressed() {
+        if (!SoftImeController.get().onBackPressed()) super.onBackPressed();
+    }
+
     @Override public void finish() {
+        SoftImeController.get().hide(this);
         // 返回输入页只 finish，不能再启动一份输入页；先隔离迟到回调。
         cancelNetwork();
         super.finish();
@@ -699,6 +716,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     }
 
     @Override protected void onDestroy() {
+        SoftImeController.get().detach(this);
         destroyed = true;
         cancelNetwork();
         main.removeCallbacksAndMessages(null);
