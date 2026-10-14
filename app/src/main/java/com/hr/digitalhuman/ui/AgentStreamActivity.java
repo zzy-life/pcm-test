@@ -199,10 +199,10 @@ public class AgentStreamActivity extends AppCompatActivity {
         settings.addView(jdActions, UiDecor.cardLp(this, 8));
         jdActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
         jdVoice = iconButton(R.drawable.ic_home_mic, "语音输入岗位");
-        LinearLayout.LayoutParams jdVoiceLp = new LinearLayout.LayoutParams(dp(48), dp(48));
-        jdVoiceLp.rightMargin = dp(8);
+        LinearLayout.LayoutParams jdVoiceLp = new LinearLayout.LayoutParams(dp(40), dp(48));
         jdActions.addView(jdVoice, jdVoiceLp);
         jdVoice.setOnClickListener(v -> toggleVoice(jd));
+        jdClear = clearButton(jdActions, jd, "清除岗位要求");
         useSample = button("使用示例数据");
         jdActions.addView(useSample, new LinearLayout.LayoutParams(0, -2, 1));
         useSample.setOnClickListener(v -> {
@@ -214,7 +214,6 @@ public class AgentStreamActivity extends AppCompatActivity {
             updateSource();
             status.setText("已填入示例数据");
         });
-        jdClear = clearButton(jdActions, jd, "清除岗位要求");
         interviewSettings = column();
         settings.addView(interviewSettings);
         label(interviewSettings, "面试题数（默认 5）");
@@ -241,15 +240,14 @@ public class AgentStreamActivity extends AppCompatActivity {
         LinearLayout resumeActions = new LinearLayout(this);
         inputs.addView(resumeActions, UiDecor.cardLp(this, 8));
         resumeActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(dp(48), dp(48));
-        resumeVoiceLp.rightMargin = dp(8);
+        LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(dp(40), dp(48));
         resumeActions.addView(resumeVoice, resumeVoiceLp);
+        resumeClear = clearButton(resumeActions, resume, "清除简历正文");
         LinearLayout.LayoutParams chooseLp = new LinearLayout.LayoutParams(0, -2, 1);
         chooseLp.rightMargin = dp(8);
         resumeActions.addView(choose, chooseLp);
         resumeActions.addView(begin, new LinearLayout.LayoutParams(0, -2, 1));
         begin.setOnClickListener(v -> startRequest());
-        resumeClear = clearButton(resumeActions, resume, "清除简历正文");
         cancel = button("取消准备");
         inputs.addView(cancel, UiDecor.cardLp(this, 8));
         cancel.setOnClickListener(v -> {
@@ -751,18 +749,22 @@ public class AgentStreamActivity extends AppCompatActivity {
         button.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
         button.setContentDescription(description);
         androidx.core.view.ViewCompat.setBackgroundTintList(button, null);
+        android.graphics.drawable.GradientDrawable rippleMask = new android.graphics.drawable.GradientDrawable();
+        rippleMask.setColor(android.graphics.Color.WHITE);
+        rippleMask.setCornerRadius(dp(12));
         button.setBackground(new android.graphics.drawable.RippleDrawable(
                 android.content.res.ColorStateList.valueOf(UiDecor.color(this, R.color.primary_dim)),
-                androidx.core.content.ContextCompat.getDrawable(this, R.drawable.bg_home_chip), null));
-        button.setPadding(dp(14), dp(14), dp(14), dp(14));
+                null, rippleMask));
+        button.setPadding(dp(10), dp(14), dp(10), dp(14));
         androidx.core.view.ViewCompat.setTooltipText(button, description);
         return button;
     }
 
     private ImageButton clearButton(LinearLayout parent, EditText target, String description) {
         ImageButton clear = iconButton(R.drawable.ic_agent_clear, description);
-        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(48));
-        lp.leftMargin = dp(8);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(40), dp(48));
+        lp.leftMargin = dp(2);
+        lp.rightMargin = dp(8);
         parent.addView(clear, lp);
         clear.setOnClickListener(v -> {
             // 先解除语音目标，避免识别回调把刚清空的内容重新填回。
