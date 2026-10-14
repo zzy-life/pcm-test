@@ -446,7 +446,7 @@ public class SoftImePanel extends LinearLayout {
         Editable ed = target.getText();
         if (ed == null) {
             target.setText(text);
-            target.setSelection(text.length());
+            target.setSelection(target.length());
             return;
         }
         int start = target.getSelectionStart();
@@ -457,8 +457,11 @@ public class SoftImePanel extends LinearLayout {
         }
         int a = Math.min(start, end);
         int b = Math.max(start, end);
+        int previousLength = ed.length();
         ed.replace(a, b, text);
-        target.setSelection(a + text.length());
+        // 数字类型和长度过滤器可能拒绝或截短文本，光标按实际插入长度移动。
+        int inserted = ed.length() - previousLength + (b - a);
+        target.setSelection(Math.min(ed.length(), a + Math.max(0, inserted)));
     }
 
     private void refreshCandidates() {

@@ -22,6 +22,7 @@ import android.widget.TextView;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.hr.digitalhuman.R;
+import com.hr.digitalhuman.ime.SoftImeController;
 import com.hr.digitalhuman.agents.AgentApiClient;
 import com.hr.digitalhuman.agents.AgentDefinition;
 import com.google.gson.JsonObject;
@@ -251,9 +252,11 @@ public class AgentStreamActivity extends AppCompatActivity {
         status = UiDecor.subtitle(this, "");
         inputs.addView(status);
         setContentView(root);
+        SoftImeController.get().bindTree(root);
     }
 
     private void toggleVoice(EditText target) {
+        SoftImeController.get().hide(this);
         if (voiceTarget == target) { endVoice(); return; }
         endVoice();
         if (!resumed || preparing || invalidParameters || isFinishing() || isDestroyed()
@@ -314,12 +317,15 @@ public class AgentStreamActivity extends AppCompatActivity {
     @Override protected void onResume() {
         super.onResume();
         resumed = true;
+        SoftImeController.get().attach(this,
+                ((ViewGroup) findViewById(android.R.id.content)).getChildAt(0), this::endVoice);
         updateVoiceButtons();
     }
 
     @Override protected void onPause() {
         resumed = false;
         endVoice();
+        SoftImeController.get().detach(this);
         super.onPause();
     }
 
@@ -376,6 +382,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void updateAgent() {
+        SoftImeController.get().hide(this);
         endVoice();
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         boolean career = definition == AgentDefinition.CAREER_AGENT;
@@ -389,6 +396,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void updateSource() {
+        SoftImeController.get().hide(this);
         endVoice();
         int mode = source.getSelectedItemPosition();
         resume.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
@@ -400,6 +408,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     private void openDocument() {
+        SoftImeController.get().hide(this);
         endVoice();
         Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
@@ -436,6 +445,7 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void startRequest() {
         if (invalidParameters || preparing || isFinishing() || isDestroyed()) return;
+        SoftImeController.get().hide(this);
         endVoice();
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
         String key = definition.apiKey();
@@ -573,13 +583,19 @@ public class AgentStreamActivity extends AppCompatActivity {
         updateButtons();
     }
 
+    @Override public void onBackPressed() {
+        if (!SoftImeController.get().onBackPressed()) super.onBackPressed();
+    }
+
     @Override public void finish() {
+        SoftImeController.get().hide(this);
         endVoice();
         cancelPreparation();
         super.finish();
     }
 
     @Override protected void onDestroy() {
+        SoftImeController.get().detach(this);
         endVoice();
         cancelPreparation();
         preparationExecutor.shutdown();

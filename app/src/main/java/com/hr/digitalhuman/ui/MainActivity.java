@@ -593,11 +593,18 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     @Override
     protected void onResume() {
         super.onResume();
+        SoftImeController.get().attach(this);
         bridge.notifyForeground();
         scheduleStandbyRecheck();
         if (fsm.getState() == RobotState.STANDBY) {
             startFocusFollowMonitoring();
         }
+    }
+
+    @Override
+    protected void onPause() {
+        SoftImeController.get().detach(this);
+        super.onPause();
     }
 
     private void startFocusFollowMonitoring() {
@@ -1449,7 +1456,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
     }
 
     private void showFragment(Fragment fragment, boolean addToBackStack) {
-        SoftImeController.get().hide();
+        SoftImeController.get().hide(this);
         androidx.fragment.app.FragmentTransaction tx = getSupportFragmentManager()
                 .beginTransaction()
                 .setCustomAnimations(0, 0)
@@ -1477,7 +1484,7 @@ public class MainActivity extends AppCompatActivity implements RobotToolRuntime.
 
     @Override
     protected void onDestroy() {
-        SoftImeController.get().detach();
+        SoftImeController.get().detach(this);
         DebugLog.flush();
         stopFocusFollowMonitoring();
         stopPresenceTracking();
