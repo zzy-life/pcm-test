@@ -85,7 +85,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     private String jobTitle = "";
     private Spinner interviewRole, referenceAnswer;
     private LinearLayout interviewSettings;
-    private TextView status, fileInfo;
+    private TextView status, fileInfo, heading;
     private Button begin, choose, cancel, useSample;
     private final ExecutorService preparationExecutor = Executors.newCachedThreadPool();
     private Future<?> preparationTask;
@@ -163,7 +163,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         back.setMinHeight(dp(28));
         back.setPadding(dp(12), 0, dp(12), 0);
         header.addView(back, new LinearLayout.LayoutParams(-2, dp(28)));
-        TextView heading = UiDecor.title(this, "智能体 · 职业资料分析");
+        heading = UiDecor.title(this, "智能体 · 职业资料分析");
         heading.setTextSize(16);
         heading.setTypeface(null, android.graphics.Typeface.BOLD);
         heading.setGravity(android.view.Gravity.CENTER);
@@ -229,7 +229,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         resumeVoice.setOnClickListener(v -> toggleVoice(resume));
         fileUrl = editor(inputs, "简历文件链接", 2);
         choose = button("选择本地文件（最多 50MB）");
-        inputs.addView(choose, UiDecor.cardLp(this, 8));
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
@@ -241,6 +240,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(0, -2, 1);
         resumeVoiceLp.rightMargin = dp(8);
         resumeActions.addView(resumeVoice, resumeVoiceLp);
+        LinearLayout.LayoutParams chooseLp = new LinearLayout.LayoutParams(0, -2, 1);
+        chooseLp.rightMargin = dp(8);
+        resumeActions.addView(choose, chooseLp);
         resumeActions.addView(begin, new LinearLayout.LayoutParams(0, -2, 1));
         begin.setOnClickListener(v -> startRequest());
         cancel = button("取消准备");
@@ -385,6 +387,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         SoftImeController.get().hide(this);
         endVoice();
         AgentDefinition definition = AGENTS[agent.getSelectedItemPosition()];
+        heading.setText("智能体 · " + definition.name);
         boolean career = definition == AgentDefinition.CAREER_AGENT;
         boolean interview = definition == AgentDefinition.INTERVIEW_AGENT;
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);

@@ -81,7 +81,7 @@ public final class AgentResultActivity extends AppCompatActivity {
     private static final int MAX_TURNS = 30, MAX_SESSION = 400000;
     private static final long RENDER_DELAY_MS = 50;
     private static final String NETWORK_ERROR =
-            "请求失败或流中断，未确认完成。请检查网络、密钥权限和输入参数。";
+            "请求失败或流中断，未确认完成。请联系管理员。";
 
     private final Handler main = new Handler(Looper.getMainLooper());
     // cancel 另起短生命周期线程，不能排在被阻塞的网络任务之后。
@@ -208,6 +208,7 @@ public final class AgentResultActivity extends AppCompatActivity {
         send = button("发送");
         latest = button("回到底部");
         getResult = button("复制结果");
+        getResult.setVisibility(View.GONE);
         getResult.setOnClickListener(v -> startReportPolling());
         actions.addView(back);
         for (Button action : new Button[]{stop, latest, getResult}) {
@@ -591,7 +592,7 @@ public final class AgentResultActivity extends AppCompatActivity {
                 main.post(() -> {
                     if (!isCurrentReport(id, attempt)) return;
                     main.removeCallbacks(deadline);
-                    finishReport("获取结果失败，请检查网络、报告权限和 JSON 格式后再次点击。");
+                    finishReport("获取结果失败，请联系管理员。");
                 });
             }
         });
@@ -728,7 +729,8 @@ public final class AgentResultActivity extends AppCompatActivity {
 
     private void updateButtons() {
         stop.setEnabled(running);
-        getResult.setEnabled(sseCompleted && !conversationId.isEmpty()
+        getResult.setEnabled(getResult.getVisibility() == View.VISIBLE
+                && sseCompleted && !conversationId.isEmpty()
                 && !running && !polling && !invalid && !destroyed);
         microphone.setEnabled(!running && !polling && !invalid && !destroyed);
         boolean available = !running && !polling && !invalid && !destroyed && (turns == 0 || !conversationId.isEmpty())
