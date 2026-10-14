@@ -14,6 +14,7 @@ import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.Spinner;
@@ -98,7 +99,7 @@ public class AgentStreamActivity extends AppCompatActivity {
     private boolean initializing = true;
     private int lastAgent, lastSource, lastType;
     private static final int AUDIO_PERMISSION = 6102;
-    private Button jdVoice, resumeVoice;
+    private ImageButton jdVoice, resumeVoice, jdClear, resumeClear;
     private EditText voiceTarget;
     private boolean resumed, applyingVoice;
     private String voiceBase = "";
@@ -196,8 +197,9 @@ public class AgentStreamActivity extends AppCompatActivity {
         jd = editor(settings, "岗位招聘要求", 4);
         LinearLayout jdActions = new LinearLayout(this);
         settings.addView(jdActions, UiDecor.cardLp(this, 8));
-        jdVoice = button("语音输入岗位");
-        LinearLayout.LayoutParams jdVoiceLp = new LinearLayout.LayoutParams(0, -2, 1);
+        jdActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        jdVoice = iconButton(R.drawable.ic_home_mic, "语音输入岗位");
+        LinearLayout.LayoutParams jdVoiceLp = new LinearLayout.LayoutParams(dp(48), dp(48));
         jdVoiceLp.rightMargin = dp(8);
         jdActions.addView(jdVoice, jdVoiceLp);
         jdVoice.setOnClickListener(v -> toggleVoice(jd));
@@ -212,6 +214,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             updateSource();
             status.setText("已填入示例数据");
         });
+        jdClear = clearButton(jdActions, jd, "清除岗位要求");
         interviewSettings = column();
         settings.addView(interviewSettings);
         label(interviewSettings, "面试题数（默认 5）");
@@ -225,7 +228,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         label(inputs, "简历来源");
         source = spinner(inputs, "手动填写简历", "上传本地简历文件", "在线简历文件链接");
         resume = editor(inputs, "简历正文", 5);
-        resumeVoice = button("语音输入简历");
+        resumeVoice = iconButton(R.drawable.ic_home_mic, "语音输入简历");
         resumeVoice.setOnClickListener(v -> toggleVoice(resume));
         fileUrl = editor(inputs, "简历文件链接", 2);
         choose = button("选择本地文件（最多 50MB）");
@@ -237,7 +240,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         begin.setTextColor(UiDecor.color(this, R.color.white));
         LinearLayout resumeActions = new LinearLayout(this);
         inputs.addView(resumeActions, UiDecor.cardLp(this, 8));
-        LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(0, -2, 1);
+        resumeActions.setGravity(android.view.Gravity.CENTER_VERTICAL);
+        LinearLayout.LayoutParams resumeVoiceLp = new LinearLayout.LayoutParams(dp(48), dp(48));
         resumeVoiceLp.rightMargin = dp(8);
         resumeActions.addView(resumeVoice, resumeVoiceLp);
         LinearLayout.LayoutParams chooseLp = new LinearLayout.LayoutParams(0, -2, 1);
@@ -245,6 +249,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         resumeActions.addView(choose, chooseLp);
         resumeActions.addView(begin, new LinearLayout.LayoutParams(0, -2, 1));
         begin.setOnClickListener(v -> startRequest());
+        resumeClear = clearButton(resumeActions, resume, "清除简历正文");
         cancel = button("取消准备");
         inputs.addView(cancel, UiDecor.cardLp(this, 8));
         cancel.setOnClickListener(v -> {
@@ -310,10 +315,19 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void updateVoiceButtons() {
         if (jdVoice == null || resumeVoice == null) return;
-        jdVoice.setText(voiceTarget == jd ? "结束语音输入" : "语音输入岗位");
-        resumeVoice.setText(voiceTarget == resume ? "结束语音输入" : "语音输入简历");
-        jdVoice.setEnabled(resumed && !preparing && !invalidParameters);
-        resumeVoice.setEnabled(resumed && !preparing && !invalidParameters);
+        updateVoiceButton(jdVoice, voiceTarget == jd, "语音输入岗位");
+        updateVoiceButton(resumeVoice, voiceTarget == resume, "语音输入简历");
+    }
+
+    private void updateVoiceButton(ImageButton button, boolean capturing, String description) {
+        button.setImageResource(capturing ? R.drawable.ic_home_stop : R.drawable.ic_home_mic);
+        String action = capturing ? "结束语音输入" : description;
+        button.setContentDescription(action);
+        androidx.core.view.ViewCompat.setTooltipText(button, action);
+        button.setSelected(capturing);
+        boolean enabled = resumed && !preparing && !invalidParameters;
+        button.setEnabled(enabled);
+        button.setAlpha(enabled ? 1f : 0.35f);
     }
 
     @Override protected void onResume() {
@@ -394,6 +408,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
         jd.setVisibility(career ? View.GONE : View.VISIBLE);
         jdVoice.setVisibility(career ? View.GONE : View.VISIBLE);
+        jdClear.setVisibility(career ? View.GONE : View.VISIBLE);
         jd.setHint(definition == AgentDefinition.OPTIMIZATION_AGENT
                 ? "岗位招聘要求（选填）" : "岗位招聘要求（必填）");
     }
@@ -404,6 +419,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         int mode = source.getSelectedItemPosition();
         resume.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
         resumeVoice.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
+        resumeClear.setVisibility(mode == TEXT ? View.VISIBLE : View.GONE);
         fileUrl.setVisibility(mode == URL_FILE ? View.VISIBLE : View.GONE);
         choose.setVisibility(mode == LOCAL ? View.VISIBLE : View.GONE);
         fileInfo.setVisibility(mode == LOCAL && fileUri != null ? View.VISIBLE : View.GONE);
@@ -614,6 +630,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         }
         cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
         cancel.setEnabled(preparing);
+        updateClearButton(jdClear, jd);
+        updateClearButton(resumeClear, resume);
         updateVoiceButtons();
     }
 
@@ -727,6 +745,43 @@ public class AgentStreamActivity extends AppCompatActivity {
         button.setPadding(dp(12), dp(4), dp(12), dp(4));
         return button;
     }
+    private ImageButton iconButton(int icon, String description) {
+        ImageButton button = new androidx.appcompat.widget.AppCompatImageButton(this);
+        button.setImageResource(icon);
+        button.setScaleType(android.widget.ImageView.ScaleType.FIT_CENTER);
+        button.setContentDescription(description);
+        androidx.core.view.ViewCompat.setBackgroundTintList(button, null);
+        button.setBackground(new android.graphics.drawable.RippleDrawable(
+                android.content.res.ColorStateList.valueOf(UiDecor.color(this, R.color.primary_dim)),
+                androidx.core.content.ContextCompat.getDrawable(this, R.drawable.bg_home_chip), null));
+        button.setPadding(dp(14), dp(14), dp(14), dp(14));
+        androidx.core.view.ViewCompat.setTooltipText(button, description);
+        return button;
+    }
+
+    private ImageButton clearButton(LinearLayout parent, EditText target, String description) {
+        ImageButton clear = iconButton(R.drawable.ic_agent_clear, description);
+        LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(dp(48), dp(48));
+        lp.leftMargin = dp(8);
+        parent.addView(clear, lp);
+        clear.setOnClickListener(v -> {
+            // 先解除语音目标，避免识别回调把刚清空的内容重新填回。
+            if (voiceTarget == target) endVoice();
+            target.setText("");
+            if (target == jd) jobTitle = "";
+            status.setText(target == jd ? "已清除岗位要求" : "已清除简历正文");
+        });
+        updateClearButton(clear, target);
+        return clear;
+    }
+
+    private void updateClearButton(ImageButton clear, EditText target) {
+        if (clear == null) return;
+        boolean enabled = !preparing && !invalidParameters && target.length() > 0;
+        clear.setEnabled(enabled);
+        clear.setAlpha(enabled ? 1f : 0.35f);
+    }
+
     private Spinner spinner(LinearLayout parent, String... options) {
         Spinner spinner = new androidx.appcompat.widget.AppCompatSpinner(this, Spinner.MODE_DROPDOWN);
         androidx.core.view.ViewCompat.setBackgroundTintList(spinner, null);
@@ -782,6 +837,8 @@ public class AgentStreamActivity extends AppCompatActivity {
             public void beforeTextChanged(CharSequence s, int start, int count, int after) {}
             public void onTextChanged(CharSequence s, int start, int before, int count) {
                 if (voiceTarget != null && !applyingVoice) endVoice();
+                if (field == jd) updateClearButton(jdClear, field);
+                else if (field == resume) updateClearButton(resumeClear, field);
             }
             public void afterTextChanged(android.text.Editable s) {}
         });
