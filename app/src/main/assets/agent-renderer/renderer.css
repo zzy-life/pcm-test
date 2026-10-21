@@ -2,7 +2,7 @@ html {
     color-scheme: dark;
     background: transparent;
     color: #f4f7fb;
-    font: 15px/1.65 sans-serif;
+    font: 13px/1.55 sans-serif;
     overflow-wrap: anywhere;
 }
 body { margin: 0; padding: 0; }
@@ -23,19 +23,19 @@ main { display: flex; flex-direction: column; gap: 8px; }
 }
 .assistant-message header {
     background: linear-gradient(90deg, #1b6bdb, #123056);
-    padding: 12px 14px;
-    font-size: 16px;
+    padding: 8px 10px;
+    font-size: 14px;
     font-weight: 700;
 }
-.message-status { color: #9bb0c9; font-size: 12px; padding: 6px 14px 0; }
-.markdown { padding: 4px 14px 12px; }
-.markdown > :first-child { margin-top: 6px; }
-h1, h2, h3, h4 { line-height: 1.35; margin: 16px 0 8px; }
-h1 { font-size: 22px; }
-h2 { font-size: 19px; }
-h3 { font-size: 16px; }
-h4 { font-size: 15px; }
-p { margin: 8px 0; }
+.message-status { color: #9bb0c9; font-size: 12px; padding: 4px 10px 0; }
+.markdown { padding: 4px 10px 8px; }
+.markdown > :first-child { margin-top: 4px; }
+h1, h2, h3, h4 { line-height: 1.35; margin: 12px 0 6px; }
+h1 { font-size: 17px; }
+h2 { font-size: 15px; }
+h3 { font-size: 14px; }
+h4 { font-size: 13px; }
+p { margin: 6px 0; }
 blockquote {
     margin: 10px 0;
     padding: 6px 12px;
@@ -55,7 +55,7 @@ code { font-family: monospace; background: #0c1624; }
 table { border-collapse: collapse; width: 100%; min-width: 520px; }
 th, td {
     border: 1px solid #445e80;
-    padding: 8px 10px;
+    padding: 6px 8px;
     text-align: left;
     vertical-align: top;
     min-width: 80px;

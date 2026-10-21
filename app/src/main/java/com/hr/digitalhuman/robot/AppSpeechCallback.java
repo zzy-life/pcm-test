@@ -38,7 +38,9 @@ public class AppSpeechCallback extends SkillCallback {
 
     @Override
     public void onQueryEnded(int status) throws RemoteException {
-        // 0正常 1other 2噪音 3超时 4强制取消 5未经过NLU提前结束；status=4 为打断/取消，无需记录
+        // 持续拾音的单轮结束不等于临时采集结束；重启管线也会产生取消事件。
+        // 不在这里关麦或重开，临时采集由 Bridge 的无文本超时统一收尾。
+        DigitalHumanApp.getInstance().getRobotBridge().logVoiceCaptureQueryEnded(status);
     }
 
     @Override
@@ -50,6 +52,8 @@ public class AppSpeechCallback extends SkillCallback {
 
     @Override
     public void onError(String type, int code, String message) throws RemoteException {
-        DebugLog.w(TAG, "onError type=" + type + " code=" + code + " msg=" + message);
+        DebugLog.w(TAG, "onError type=" + type + " code=" + code);
+        // 全局错误不带请求代次，可能属于刚停止的旧识别，不能据此关闭新采集。
+        // 若当前采集确实失效，由 Bridge 的无文本超时释放占用并通知页面。
     }
 }

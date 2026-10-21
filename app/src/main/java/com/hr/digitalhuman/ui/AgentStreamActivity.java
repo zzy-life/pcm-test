@@ -101,13 +101,18 @@ public class AgentStreamActivity extends AppCompatActivity {
     private static final int AUDIO_PERMISSION = 6102;
     private ImageButton jdVoice, resumeVoice, jdClear, resumeClear;
     private EditText voiceTarget;
-    private boolean resumed, applyingVoice;
+    private boolean resumed, applyingVoice, voiceReceivedText;
     private String voiceBase = "";
     private com.hr.digitalhuman.robot.RobotSdkBridge voiceBridge;
     private final com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener voiceListener =
             new com.hr.digitalhuman.robot.RobotSdkBridge.SpeechTextListener() {
                 public void onAsrPartial(String text) { applyVoice(text, false); }
                 public void onAsrResult(String text) { applyVoice(text, true); }
+                public void onVoiceCaptureFailed(String reason) {
+                    if (voiceTarget == null) return;
+                    endVoice();
+                    status.setText(reason);
+                }
             };
 
     public static void start(Context context) {
@@ -126,14 +131,14 @@ public class AgentStreamActivity extends AppCompatActivity {
     }
 
     @Override protected void attachBaseContext(Context newBase) {
-        super.attachBaseContext(newBase);
-        // 与首页使用同一设计密度，避免独立 Activity 恢复设备密度后整页放大。
-        applyDisplayDensity(newBase);
+        com.hr.digitalhuman.model.RobotConfig config = com.hr.digitalhuman.app.DigitalHumanApp
+                .getInstance().getSessionStore().getConfig();
+        super.attachBaseContext(DisplayDensityHelper.createPageContext(
+                newBase, config == null ? null : config.display));
     }
 
     @Override protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        applyDisplayDensity(this);
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE);
         createViews();
         if (savedInstanceState != null) restore(savedInstanceState);
@@ -143,12 +148,6 @@ public class AgentStreamActivity extends AppCompatActivity {
         updateSource();
         updateAgent();
         updateButtons();
-    }
-
-    private void applyDisplayDensity(Context context) {
-        com.hr.digitalhuman.model.RobotConfig config = com.hr.digitalhuman.app.DigitalHumanApp
-                .getInstance().getSessionStore().getConfig();
-        DisplayDensityHelper.apply(context, config == null ? null : config.display);
     }
 
     private void createViews() {
@@ -280,6 +279,7 @@ public class AgentStreamActivity extends AppCompatActivity {
             return;
         }
         voiceBase = target.getText().toString();
+        voiceReceivedText = false;
         voiceTarget = target;
         updateVoiceButtons();
         status.setText(target == jd ? "正在聆听岗位要求，结束后请确认资料" : "正在聆听简历，结束后请确认资料");
@@ -289,6 +289,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         EditText target = voiceTarget;
         if (target == null || !resumed || preparing || isFinishing() || isDestroyed()
                 || text == null || text.trim().isEmpty()) return;
+        voiceReceivedText = true;
         // partial 始终替换本次预览，不把同一句话反复追加。
         String value = voiceBase + (voiceBase.isEmpty() || voiceBase.endsWith("\n") ? "" : "\n") + text.trim();
         int end = Math.min(value.length(), MAX_INPUT_CHARS);
@@ -308,7 +309,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         voiceTarget = null;
         if (voiceBridge != null) voiceBridge.endVoiceCapture(voiceListener);
         updateVoiceButtons();
-        if (wasCapturing && status != null) status.setText("语音已填入，请确认资料后点击开始");
+        if (wasCapturing && status != null) status.setText(voiceReceivedText
+                ? "语音已填入，请确认资料后点击开始" : "未识别到内容，请再次点击麦克风重试");
     }
 
     private void updateVoiceButtons() {
