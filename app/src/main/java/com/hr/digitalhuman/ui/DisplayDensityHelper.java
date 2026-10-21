@@ -22,6 +22,21 @@ public final class DisplayDensityHelper {
     private DisplayDensityHelper() {
     }
 
+    /** 仅供独立智能体 Activity 使用，不写入原 Context 或 Application 的显示指标。 */
+    public static Context createPageContext(Context context, RobotConfig.DisplayConfig display) {
+        DisplayMetrics metrics = context.getResources().getDisplayMetrics();
+        int widthPx = metrics.widthPixels;
+        if (widthPx <= 0) widthPx = display != null && display.width > 0 ? display.width : 1920;
+        float designWidthDp = display != null && display.designWidthDp > 0
+                ? display.designWidthDp : DEFAULT_DESIGN_WIDTH_DP;
+        float density = Math.max(1f, Math.min(4f, widthPx / designWidthDp));
+        // 使用配置覆盖而非直接改 DisplayMetrics，资源刷新时仍保留页面设计密度。
+        android.content.res.Configuration override = new android.content.res.Configuration();
+        override.densityDpi = Math.round(160f * density);
+        override.fontScale = 1f;
+        return context.createConfigurationContext(override);
+    }
+
     public static void apply(Context context) {
         apply(context, null);
     }

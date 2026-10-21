@@ -8,7 +8,7 @@ import android.view.View;
 import android.widget.FrameLayout;
 import android.widget.TextView;
 
-/** 应用内浮层，不申请系统悬浮窗权限，随 Activity 销毁。 */
+/** 跟踪智能体页面生命周期，并保留 test 分支的调试入口。 */
 public final class AgentFloatingEntry implements Application.ActivityLifecycleCallbacks {
     private static final String TAG = "agent_floating_entry";
     private volatile int visibleAgentPages;

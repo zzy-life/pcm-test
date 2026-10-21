@@ -58,6 +58,10 @@ public class RobotSdkBridge {
         /** 中间识别结果，用于对话页输入框实时预览。 */
         default void onAsrPartial(String text) {
         }
+
+        /** 临时采集失败；主线程回调，调用前已释放采集占用。 */
+        default void onVoiceCaptureFailed(String reason) {
+        }
     }
 
     /** 是否允许打开拾音；无人在前方时应返回 false。 */
@@ -78,6 +82,10 @@ public class RobotSdkBridge {
     // 临时采集独立于默认页面；状态快照及代次变更使用同一把锁。
     private volatile SpeechTextListener voiceCaptureListener;
     private volatile long voiceCaptureGeneration;
+    private final Object voiceCaptureTasks = new Object();
+    private Runnable voiceCaptureTimeout;
+    private boolean voiceCaptureReceivedText;
+    private static final long VOICE_IDLE_TIMEOUT_MS = 15000;
     private ListeningPolicy listeningPolicy;
     private PersonPresenceTracker presenceTracker;
     private RobotConfig.TtsConfig ttsConfig;
@@ -105,7 +113,7 @@ public class RobotSdkBridge {
     }
 
     /**
-     * 在主线程开始临时采集；返回 true 才表示识别已开启。
+     * 在主线程开始临时采集；返回 true 表示已受理，异步失败通过监听器反馈。
      * 同一监听器可重复调用，其他监听器不能抢占；不会替换默认页面监听器。
      */
     public boolean beginVoiceCapture(SpeechTextListener listener) {
@@ -122,17 +130,27 @@ public class RobotSdkBridge {
                 DebugLog.w(TAG, "voice capture rejected: " + unavailable);
                 return false;
             }
-            if (voiceCaptureListener == null) {
-                voiceCaptureGeneration++;
-                voiceCaptureListener = listener;
-            }
-            enableListening();
-            if (!isRecognizable()) {
-                // 开麦失败也结束本代次，防止已排队的结果泄漏到默认页面。
-                DebugLog.w(TAG, "voice capture rejected: SDK recognizer not enabled");
+            if (voiceCaptureListener == listener) return true;
+            final long generation = ++voiceCaptureGeneration;
+            voiceCaptureListener = listener;
+            voiceCaptureReceivedText = false;
+            lastAsrText = "";
+            lastAsrAt = 0;
+            // 与首页恢复一致：重挂回调、重置持续拾音，再按模式→识别的顺序开启。
+            try {
+                skillApi.registerCallBack(DigitalHumanApp.getInstance().getSpeechCallback());
+            } catch (Throwable t) {
+                DebugLog.w(TAG, "voice capture callback registration failed");
                 endVoiceCapture(listener);
                 return false;
             }
+            restartRecognitionPipeline();
+            enableListening();
+            DebugLog.i(TAG, "voice capture begin generation=" + generation);
+            postVoiceCaptureTask(() -> retryVoiceCapture(generation), 400);
+            postVoiceCaptureTask(() -> retryVoiceCapture(generation), 1200);
+            voiceCaptureTimeout = () -> failVoiceCapture(generation, "未收到完整语音，请再次点击麦克风重试");
+            refreshVoiceCaptureTimeout();
             return true;
         }
     }
@@ -152,9 +170,60 @@ public class RobotSdkBridge {
             if (listener == null || voiceCaptureListener != listener) {
                 return;
             }
+            DebugLog.i(TAG, "voice capture end generation=" + voiceCaptureGeneration);
             voiceCaptureGeneration++;
             voiceCaptureListener = null;
+            mainHandler.removeCallbacksAndMessages(voiceCaptureTasks);
+            voiceCaptureTimeout = null;
             disableListening();
+        }
+    }
+
+    private void postVoiceCaptureTask(Runnable task, long delayMs) {
+        mainHandler.postAtTime(task, voiceCaptureTasks,
+                android.os.SystemClock.uptimeMillis() + delayMs);
+    }
+
+    private synchronized void refreshVoiceCaptureTimeout() {
+        if (voiceCaptureTimeout == null) return;
+        mainHandler.removeCallbacks(voiceCaptureTimeout);
+        postVoiceCaptureTask(voiceCaptureTimeout, VOICE_IDLE_TIMEOUT_MS);
+    }
+
+    private synchronized void retryVoiceCapture(long generation) {
+        if (voiceCaptureListener == null || generation != voiceCaptureGeneration) return;
+        String reason = voiceCaptureUnavailableReason();
+        if (reason != null) {
+            failVoiceCapture(generation, reason);
+            return;
+        }
+        // 已有文本说明管线在工作，不重复开启而打断正在说的话。
+        if (!voiceCaptureReceivedText) {
+            enableListening();
+            DebugLog.i(TAG, "voice capture retry generation=" + generation
+                    + " recognizable=" + isRecognizable());
+        }
+    }
+
+    private synchronized void failVoiceCapture(long generation, String reason) {
+        if (voiceCaptureListener == null || generation != voiceCaptureGeneration) return;
+        SpeechTextListener target = voiceCaptureListener;
+        DebugLog.w(TAG, "voice capture failed generation=" + generation + " reason=" + reason);
+        endVoiceCapture(target);
+        target.onVoiceCaptureFailed(reason);
+    }
+
+    /** SDK 回调可能来自工作线程；只结束事件到达时的采集代次。 */
+    private synchronized void dispatchVoiceCaptureFailure(String reason) {
+        if (voiceCaptureListener == null) return;
+        final long generation = voiceCaptureGeneration;
+        mainHandler.post(() -> failVoiceCapture(generation, reason));
+    }
+
+    public synchronized void logVoiceCaptureQueryEnded(int status) {
+        if (voiceCaptureListener != null) {
+            DebugLog.i(TAG, "voice capture query ended generation=" + voiceCaptureGeneration
+                    + " status=" + status);
         }
     }
 
@@ -229,6 +298,7 @@ public class RobotSdkBridge {
                 @Override
                 public void handleApiDisconnected() {
                     robotConnected = false;
+                    dispatchVoiceCaptureFailure("机器人连接已断开，请稍后重试");
                 }
             });
         } catch (Throwable t) {
@@ -460,6 +530,7 @@ public class RobotSdkBridge {
                 public void handleApiDisabled() {
                     DebugLog.w(TAG, "SkillApi disabled");
                     skillConnected = false;
+                    dispatchVoiceCaptureFailure("语音服务不可用，请稍后重试");
                 }
 
                 @Override
@@ -478,6 +549,7 @@ public class RobotSdkBridge {
                 public void handleApiDisconnected() {
                     skillConnected = false;
                     DebugLog.w(TAG, "SkillApi disconnected");
+                    dispatchVoiceCaptureFailure("语音服务已断开，请稍后重试");
                 }
             });
             skillApi.connectApi(appContext);
@@ -822,6 +894,14 @@ public class RobotSdkBridge {
                         : voiceCaptureListener != null || speechTextListener != target)
                         || !allowVoiceInput(partial ? "partial" : "asr")) {
                     return;
+                }
+                if (temporary && !text.trim().isEmpty()) {
+                    if (!voiceCaptureReceivedText) {
+                        DebugLog.i(TAG, "voice capture first text generation=" + generation
+                                + " partial=" + partial);
+                    }
+                    voiceCaptureReceivedText = true;
+                    refreshVoiceCaptureTimeout();
                 }
                 if (partial) {
                     target.onAsrPartial(text);
