@@ -52,14 +52,15 @@ public class ThinkingScene extends LinearLayout {
         addView(phrase, textLp);
     }
 
-    /** 光效在底层，七个文字标签共同绕圈，其中四个智能体入口支持点击。 */
+    /** 光效在底层，文字标签共同绕圈，已接入的智能体支持点击。 */
     private static final class OrbitStage extends FrameLayout {
 
         private static final String[] WORDS = {"政策咨询", "业务导办", "接待引路",
-                "简历诊断", "职业规划", "简历优化", "面试模拟"};
+                "简历诊断", "职业规划", "简历优化", "面试模拟", "简历画像"};
         private static final String[] AGENT_IDS = {null, null, null,
                 AgentDefinition.RESUME_DIAGNOSIS, AgentDefinition.CAREER,
-                AgentDefinition.RESUME_OPTIMIZATION, AgentDefinition.MOCK_INTERVIEW};
+                AgentDefinition.RESUME_OPTIMIZATION, AgentDefinition.MOCK_INTERVIEW,
+                AgentDefinition.RESUME_PORTRAIT};
 
         private final TextView[] labels = new TextView[WORDS.length];
         private ValueAnimator animator;

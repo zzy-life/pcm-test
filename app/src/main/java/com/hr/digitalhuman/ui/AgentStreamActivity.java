@@ -45,7 +45,8 @@ public class AgentStreamActivity extends AppCompatActivity {
     private boolean invalidParameters;
     private static final int TEXT = 0, LOCAL = 1, URL_FILE = 2;
     private static final AgentDefinition[] AGENTS = {AgentDefinition.CAREER_AGENT,
-            AgentDefinition.DIAGNOSIS_AGENT, AgentDefinition.OPTIMIZATION_AGENT, AgentDefinition.INTERVIEW_AGENT};
+            AgentDefinition.DIAGNOSIS_AGENT, AgentDefinition.OPTIMIZATION_AGENT, AgentDefinition.INTERVIEW_AGENT,
+            AgentDefinition.PORTRAIT_AGENT};
     private static final String SAMPLE_JD = "高级销售专员/ 销售主管\n"
             + "岗位亮点\n行业领先的平台，完善的晋升通道和培训体系\n"
             + "参与核心业务拓展，发挥个人及团队影响力\n丰厚的绩效激励与多元成长机会\n"
@@ -229,7 +230,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         resumeVoice = iconButton(R.drawable.ic_home_mic, "语音输入简历");
         resumeVoice.setOnClickListener(v -> toggleVoice(resume));
         fileUrl = editor(inputs, "简历文件链接", 2);
-        choose = button("选择本地文件（最多 50MB）");
+        choose = button("选择简历（PDF/Word/TXT，15MB）");
         choose.setOnClickListener(v -> openDocument());
         fileInfo = UiDecor.subtitle(this, "");
         inputs.addView(fileInfo);
@@ -404,11 +405,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         heading.setText("智能体 · " + definition.name);
         boolean career = definition == AgentDefinition.CAREER_AGENT;
         boolean interview = definition == AgentDefinition.INTERVIEW_AGENT;
+        boolean noJob = career || definition == AgentDefinition.PORTRAIT_AGENT;
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);
         interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
-        jd.setVisibility(career ? View.GONE : View.VISIBLE);
-        jdVoice.setVisibility(career ? View.GONE : View.VISIBLE);
-        jdClear.setVisibility(career ? View.GONE : View.VISIBLE);
+        jd.setVisibility(noJob ? View.GONE : View.VISIBLE);
+        jdVoice.setVisibility(noJob ? View.GONE : View.VISIBLE);
+        jdClear.setVisibility(noJob ? View.GONE : View.VISIBLE);
         jd.setHint(definition == AgentDefinition.OPTIMIZATION_AGENT
                 ? "岗位招聘要求（选填）" : "岗位招聘要求（必填）");
     }
@@ -432,6 +434,8 @@ public class AgentStreamActivity extends AppCompatActivity {
         Intent pick = new Intent(Intent.ACTION_OPEN_DOCUMENT);
         pick.addCategory(Intent.CATEGORY_OPENABLE);
         pick.setType("*/*");
+        pick.putExtra(Intent.EXTRA_MIME_TYPES, new String[]{"application/pdf", "application/msword",
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document", "text/plain"});
         pick.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_GRANT_PERSISTABLE_URI_PERMISSION);
         try { startActivityForResult(pick, PICK_FILE); }
         catch (RuntimeException e) { status.setText("系统文件选择器不可用，请使用简历文本。"); }
@@ -439,6 +443,12 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     @Override protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        if (requestCode == 6103) {
+            if (data != null && data.hasExtra("portrait_error")) {
+                status.setText(data.getStringExtra("portrait_error"));
+            }
+            return;
+        }
         if (preparing || isFinishing() || isDestroyed() || requestCode != PICK_FILE
                 || resultCode != RESULT_OK || data == null || data.getData() == null) return;
         fileUri = data.getData();
@@ -493,6 +503,22 @@ public class AgentStreamActivity extends AppCompatActivity {
                 || (mode == URL_FILE && explicitUrl.isEmpty())) {
             status.setText("请提供简历"); return;
         }
+        if (mode == TEXT && resumeText.length() > 20000) {
+            status.setText("简历文本最多 20,000 个字符，请精简后重试"); return;
+        }
+        if (mode == LOCAL
+                && !filename.toLowerCase(Locale.ROOT).matches(".+\\.(pdf|doc|docx|txt)")) {
+            status.setText("简历仅支持 PDF、DOC、DOCX、TXT 文件"); return;
+        }
+        if (mode == LOCAL) {
+            try (Cursor cursor = getContentResolver().query(fileUri,
+                    new String[]{OpenableColumns.SIZE}, null, null, null)) {
+                if (cursor != null && cursor.moveToFirst() && !cursor.isNull(0)
+                        && cursor.getLong(0) > 15L * 1024 * 1024) {
+                    status.setText("简历文件不能超过 15MB"); return;
+                }
+            } catch (RuntimeException ignored) { /* 大小未知时由上传流执行硬性上限检查。 */ }
+        }
         if (mode == URL_FILE && !isPublicFileUrl(explicitUrl)) {
             status.setText("请填写可公开访问的完整简历文件链接");
             return;
@@ -531,7 +557,8 @@ public class AgentStreamActivity extends AppCompatActivity {
                 final String uploadedFile;
                 // openInputStream 可能不响应中断；返回后仍交给已取消的 client，确保关闭。
                 try (InputStream input = getContentResolver().openInputStream(selectedUri)) {
-                    uploadedFile = client.upload(input, selectedName, selectedMime);
+                    uploadedFile = client.upload(input, selectedName, selectedMime,
+                            15L * 1024 * 1024);
                 }
                 JsonObject body = definition.buildRequest(planningType, jdText, titleText, "", uploadedFile,
                         selectedName, count, role, reference);
@@ -560,6 +587,10 @@ public class AgentStreamActivity extends AppCompatActivity {
 
     private void openResult(AgentDefinition definition, String key, JsonObject body, String summary) {
         if (isFinishing() || isDestroyed()) return;
+        if (definition == AgentDefinition.PORTRAIT_AGENT) {
+            ResumePortraitActivity.start(this, body);
+            return;
+        }
         AgentResultActivity.start(this, key, definition.name, body.getAsJsonObject("inputs"),
                 body.get("query").getAsString(), "", body.get("response_mode").getAsString(), summary,
                 definition == AgentDefinition.INTERVIEW_AGENT, 10, 3000, 10000);

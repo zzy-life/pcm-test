@@ -194,8 +194,27 @@ public final class AgentApiClient {
         }
     }
 
-    /** 优先返回解码后的 JSON，否则返回 content；null 表示报告内容尚未生成。 */
+    public static final class ReportData {
+        public final String json;
+        public final String content;
+
+        ReportData(String json, String content) {
+            this.json = json;
+            this.content = content;
+        }
+    }
+
+    /** 保持其他智能体的复制语义：优先 JSON，否则正文。 */
     public String fetchReportResult(String conversationId, int timeoutMs) throws IOException {
+        ReportData report = fetchReportData(conversationId, timeoutMs);
+        if (report == null) return null;
+        String result = report.json != null ? report.json : report.content;
+        if (result != null && result.length() > 100000) throw failure("报告内容超过复制上限");
+        return result;
+    }
+
+    /** 画像同时需要结构化数据与完整正文。 */
+    public ReportData fetchReportData(String conversationId, int timeoutMs) throws IOException {
         begin();
         try {
             if (conversationId == null || !conversationId.matches("[A-Za-z0-9-]{1,256}")) {
@@ -206,8 +225,8 @@ public final class AgentApiClient {
             conn.setConnectTimeout(timeoutMs);
             conn.setReadTimeout(timeoutMs);
             conn.setRequestMethod("GET");
-            // 报告接口使用应用密钥原值（app-...），不是对话接口的 Bearer 格式。
-            conn.setRequestProperty("Authorization", apiKey);
+            // 报告与对话统一使用 Bearer 鉴权。
+            conn.setRequestProperty("Authorization", "Bearer " + apiKey);
             conn.setRequestProperty("Accept", "application/json");
             int http = conn.getResponseCode();
             checkCancelled();
@@ -227,13 +246,12 @@ public final class AgentApiClient {
             if (!data.isJsonObject()) throw failure("报告数据无效");
             String returnedId = stringField(data.getAsJsonObject(), "conversation_id");
             if (!conversationId.equals(returnedId)) throw failure("报告会话 ID 不一致");
+            String content = stringField(data.getAsJsonObject(), "content");
             String encoded = stringField(data.getAsJsonObject(), "json_base64");
             if (encoded == null || encoded.trim().isEmpty() || "null".equals(encoded.trim())) {
-                String content = stringField(data.getAsJsonObject(), "content");
                 if (content == null || content.trim().isEmpty()) return null;
-                if (content.length() > 100000) throw failure("报告内容超过复制上限");
                 checkCancelled();
-                return content;
+                return new ReportData(null, content);
             }
             byte[] bytes = android.util.Base64.decode(encoded, android.util.Base64.DEFAULT);
             String json = UTF8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
@@ -243,10 +261,8 @@ public final class AgentApiClient {
             if (!parsed.isJsonObject() && !parsed.isJsonArray()) throw failure("报告 JSON 格式无效");
             // 重新序列化，保证复制的是标准 JSON，而非解析器容忍的非标准原文。
             String normalized = gson.toJson(parsed);
-            // 剪贴板走 Binder，限制结果大小，避免事务超限。
-            if (normalized.length() > 100000) throw failure("报告 JSON 超过复制上限");
             checkCancelled();
-            return normalized;
+            return new ReportData(normalized, content);
         } catch (IOException | RuntimeException e) {
             throw sanitize("报告查询或解码", e);
         } finally {
@@ -255,6 +271,10 @@ public final class AgentApiClient {
     }
 
     public String upload(InputStream input, String filename, String mimeType) throws IOException {
+        return upload(input, filename, mimeType, MAX_FILE_BYTES);
+    }
+
+    public String upload(InputStream input, String filename, String mimeType, long maxBytes) throws IOException {
         if (input == null) {
             throw failure("上传输入无效");
         }
@@ -262,7 +282,7 @@ public final class AgentApiClient {
         try (InputStream owned = input) {
             begin();
             try {
-                return uploadInternal(owned, filename, mimeType);
+                return uploadInternal(owned, filename, mimeType, maxBytes);
             } catch (IOException | RuntimeException e) {
                 throw sanitize("上传", e);
             } finally {
@@ -274,6 +294,11 @@ public final class AgentApiClient {
     }
 
     private String uploadInternal(InputStream input, String filename, String mimeType)
+            throws IOException {
+        return uploadInternal(input, filename, mimeType, MAX_FILE_BYTES);
+    }
+
+    private String uploadInternal(InputStream input, String filename, String mimeType, long maxBytes)
             throws IOException {
         track(input);
         String safeName = safeFilename(filename);
@@ -293,7 +318,7 @@ public final class AgentApiClient {
                     + "Content-Disposition: form-data; name=\"file\"; filename=\""
                     + safeName + "\"\r\nContent-Type: " + safeMime + "\r\n\r\n";
             out.write(header.getBytes(UTF8));
-            copyLimited(input, out, "上传");
+            copyLimited(input, out, "上传", maxBytes);
             checkCancelled();
             out.write(("\r\n--" + boundary + "--\r\n").getBytes(UTF8));
         }
@@ -455,7 +480,7 @@ public final class AgentApiClient {
         }
     }
 
-    private long copyLimited(InputStream input, OutputStream out, String stage)
+    private long copyLimited(InputStream input, OutputStream out, String stage, long maxBytes)
             throws IOException {
         byte[] buffer = new byte[8192];
         long total = 0;
@@ -467,8 +492,8 @@ public final class AgentApiClient {
                 return total;
             }
             total += n;
-            if (total > MAX_FILE_BYTES) {
-                throw failure(stage + "超过 50MB 限制");
+            if (total > maxBytes) {
+                throw failure(stage + "超过 " + (maxBytes / (1024 * 1024)) + "MB 限制");
             }
             out.write(buffer, 0, n);
         }

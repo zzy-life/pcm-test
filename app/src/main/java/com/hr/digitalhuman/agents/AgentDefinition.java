@@ -14,6 +14,9 @@ public final class AgentDefinition {
 
     public static final String RESUME_OPTIMIZATION = "resume_optimization";
     public static final String MOCK_INTERVIEW = "mock_interview";
+    public static final String RESUME_PORTRAIT = "resume_portrait";
+    public static final AgentDefinition PORTRAIT_AGENT =
+            new AgentDefinition(RESUME_PORTRAIT, "简历画像", "agents.resume.portrait.api.key");
     public static final AgentDefinition OPTIMIZATION_AGENT =
             new AgentDefinition(RESUME_OPTIMIZATION, "简历优化", "agents.resume.optimization.api.key");
     public static final AgentDefinition INTERVIEW_AGENT =
@@ -35,6 +38,7 @@ public final class AgentDefinition {
         if (RESUME_DIAGNOSIS.equals(id)) return DIAGNOSIS_AGENT;
         if (RESUME_OPTIMIZATION.equals(id)) return OPTIMIZATION_AGENT;
         if (MOCK_INTERVIEW.equals(id)) return INTERVIEW_AGENT;
+        if (RESUME_PORTRAIT.equals(id)) return PORTRAIT_AGENT;
         throw new IllegalArgumentException("请选择支持的智能体");
     }
 
@@ -44,6 +48,7 @@ public final class AgentDefinition {
             case RESUME_DIAGNOSIS: return BuildConfig.AGENTS_RESUME_DIAGNOSIS_API_KEY;
             case RESUME_OPTIMIZATION: return BuildConfig.AGENTS_RESUME_OPTIMIZATION_API_KEY;
             case MOCK_INTERVIEW: return BuildConfig.AGENTS_MOCK_INTERVIEW_API_KEY;
+            case RESUME_PORTRAIT: return BuildConfig.AGENTS_RESUME_PORTRAIT_API_KEY;
             default: throw new IllegalArgumentException("不支持的智能体");
         }
     }
@@ -58,11 +63,16 @@ public final class AgentDefinition {
                 || (!MOCK_INTERVIEW.equals(id) && resume.isEmpty() && file.isEmpty())) {
             throw new IllegalArgumentException("请选择一种有效的简历来源");
         }
+        if (resumeContent != null && resumeContent.length() > 20000) {
+            throw new IllegalArgumentException("简历文本最多 20,000 个字符");
+        }
         JsonObject inputs = new JsonObject();
         if (!resume.isEmpty()) inputs.addProperty("resume_content", resume);
         else if (!file.isEmpty()) inputs.addProperty("file_url", file);
         String query;
-        if (CAREER.equals(id)) {
+        if (RESUME_PORTRAIT.equals(id)) {
+            query = "开始";
+        } else if (CAREER.equals(id)) {
             if (!"晋升路径".equals(type) && !"转型建议".equals(type)) {
                 throw new IllegalArgumentException("请选择晋升路径或转型建议");
             }
