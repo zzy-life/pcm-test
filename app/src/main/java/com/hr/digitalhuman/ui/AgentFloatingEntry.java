@@ -11,7 +11,8 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
     private java.lang.ref.WeakReference<MainActivity> mainActivity = new java.lang.ref.WeakReference<>(null);
 
     private static boolean isAgentActivity(Activity activity) {
-        return activity instanceof AgentStreamActivity || activity instanceof AgentResultActivity;
+        return activity instanceof AgentStreamActivity || activity instanceof AgentResultActivity
+                || activity instanceof ResumePortraitActivity;
     }
 
     public boolean isAgentPageVisible() {
