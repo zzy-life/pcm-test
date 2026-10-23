@@ -84,6 +84,9 @@ public final class InterviewSdkActivity extends AppCompatActivity {
 
     @Override protected void onCreate(Bundle state) {
         super.onCreate(state);
+        // SDK 独占麦克风：仅关闭识别不能停止机器人持续拾音。
+        com.hr.digitalhuman.robot.RobotSdkBridge bridge = DigitalHumanApp.getInstance().getRobotBridge();
+        if (bridge != null) bridge.pauseListeningFully();
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundResource(R.drawable.bg_page);
