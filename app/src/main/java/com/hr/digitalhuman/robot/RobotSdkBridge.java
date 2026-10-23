@@ -121,6 +121,7 @@ public class RobotSdkBridge {
             return false;
         }
         synchronized (this) {
+            if (!externalMicrophoneOwners.isEmpty()) return false;
             if (voiceCaptureListener != null && voiceCaptureListener != listener) {
                 DebugLog.w(TAG, "voice capture rejected: owned by another listener");
                 return false;
@@ -359,8 +360,36 @@ public class RobotSdkBridge {
      * 必须同时：onForeground + setRecognizable(true) + setRecognizeMode(true)。
      * 系统设置「语音识别」「持续拾音」也需开启，否则接口不生效。
      */
+    private final java.util.Set<Object> externalMicrophoneOwners = new java.util.HashSet<>();
+
+    /** 独立持有者避免页面重建时旧实例提前恢复 ASR。 */
+    public synchronized void acquireExternalMicrophone(Object owner) {
+        externalMicrophoneOwners.add(owner);
+        if (voiceCaptureListener != null) endVoiceCapture(voiceCaptureListener);
+        stopAsrForExternalMicrophone();
+    }
+
+    public synchronized void releaseExternalMicrophone(Object owner) {
+        externalMicrophoneOwners.remove(owner);
+        // 不在此处开麦；资料页按需临时采集，首页沿用原有恢复策略。
+    }
+
+    private void stopAsrForExternalMicrophone() {
+        pauseListeningFully();
+        try {
+            if (skillApi != null) skillApi.setASREnabled(false);
+        } catch (Throwable t) {
+            DebugLog.w(TAG, "disable ASR for external microphone failed");
+        }
+    }
+
     public synchronized void enableListening() {
         try {
+            if (!externalMicrophoneOwners.isEmpty()) {
+                // 同时覆盖服务重连、TTS 结束和排队的开麦重试。
+                stopAsrForExternalMicrophone();
+                return;
+            }
             if (voiceCaptureListener != null
                     && (!isChassisReady() || !allowVoiceInput("listening"))) {
                 disableListening();
