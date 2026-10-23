@@ -52,7 +52,6 @@ public final class InterviewSdkActivity extends AppCompatActivity {
     private final Handler handler = new Handler(Looper.getMainLooper());
     private final ExecutorService executor = Executors.newSingleThreadExecutor();
     private FrameLayout content;
-    private Button back;
     private WebView webView;
     private PermissionRequest pendingPermission;
     private AgentSdkAuthClient authClient;
@@ -90,16 +89,6 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundResource(R.drawable.bg_page);
-        root.setPadding(dp(10), dp(6), dp(10), dp(6));
-        LinearLayout header = new LinearLayout(this);
-        header.setGravity(android.view.Gravity.CENTER_VERTICAL);
-        back = UiDecor.button(this, "返回", false);
-        back.setOnClickListener(v -> onBackPressed());
-        header.addView(back, new LinearLayout.LayoutParams(-2, dp(36)));
-        TextView title = UiDecor.title(this, "数字人面试");
-        title.setGravity(android.view.Gravity.CENTER);
-        header.addView(title, new LinearLayout.LayoutParams(0, -2, 1));
-        root.addView(header);
         content = new FrameLayout(this);
         root.addView(content, new LinearLayout.LayoutParams(-1, 0, 1));
         setContentView(root);
@@ -291,7 +280,6 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         }
         interviewEnded = true;
         polling = true;
-        back.setEnabled(false);
         destroyWebView();
         showMessage("面试已完成，正在生成报告，请稍候…", true);
         if (reportDeadline == 0) reportDeadline = android.os.SystemClock.elapsedRealtime() + 300000;
@@ -337,7 +325,6 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         polling = false;
         terminal = true;
         handler.removeCallbacks(reportTimeout);
-        back.setEnabled(true);
         content.removeAllViews();
         ScrollView scroll = new ScrollView(this);
         TextView text = new TextView(this);
@@ -365,7 +352,6 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         handler.removeCallbacks(reportTimeout);
         handler.removeCallbacks(loadTimeout);
         destroyWebView();
-        back.setEnabled(true);
         LinearLayout panel = showMessage(message, false);
         if (retryReport) {
             Button retry = UiDecor.button(this, "重新查询报告", true);
