@@ -1,7 +1,5 @@
 package com.hr.digitalhuman.ui;
 
-import android.content.ClipData;
-import android.content.ClipboardManager;
 import android.content.Context;
 import android.graphics.Canvas;
 import android.graphics.Paint;
@@ -14,7 +12,6 @@ import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
-import android.widget.Toast;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
@@ -43,12 +40,15 @@ final class ResumePortraitReportView extends LinearLayout {
         this.markdown = content == null || content.trim().isEmpty() ? buildMarkdown() : content;
         setOrientation(VERTICAL);
         LinearLayout navigation = new LinearLayout(context);
+        navigation.setPadding(dp(8), dp(8), dp(8), dp(8));
         String[] names = {"概览", "能力仪表盘", "完整报告"};
         for (int i = 0; i < names.length; i++) {
             final int tab = i;
             tabs[i] = button(names[i]);
             tabs[i].setOnClickListener(v -> select(tab));
-            navigation.addView(tabs[i], new LayoutParams(0, dp(36), 1));
+            LayoutParams tabLp = new LayoutParams(0, dp(36), 1);
+            if (i > 0) tabLp.leftMargin = dp(10);
+            navigation.addView(tabs[i], tabLp);
         }
         addView(navigation);
         pages = column();
@@ -152,11 +152,15 @@ final class ResumePortraitReportView extends LinearLayout {
         if (items.size() == 0) text(capabilities, "暂无核心能力数据", 13, false);
         for (JsonElement item : items) {
             JsonObject value = asObject(item);
-            text(capabilities, str(value, "name") + " · " + category(str(value, "category"))
-                    + " · " + str(value, "level") + " · " + decimal(num(value, "score")), 14, true);
-            text(capabilities, confidence(str(value, "confidence")) + "置信度 · "
+            LinearLayout itemPanel = itemPanel(capabilities);
+            text(itemPanel, str(value, "name"), 15, true).setTextColor(BLUE);
+            TextView metadata = text(itemPanel, category(str(value, "category")) + " · "
+                    + str(value, "level") + " · 得分 " + decimal(num(value, "score")) + " · "
+                    + confidence(str(value, "confidence")) + "置信度 · "
                     + (bool(value, "verified") ? "已有证据验证" : "待验证"), 12, false);
-            text(capabilities, bullets(array(value, "evidence")), 13, false);
+            metadata.setTextColor(UiDecor.color(getContext(), R.color.text_dim));
+            text(itemPanel, "事实依据", 13, true);
+            text(itemPanel, bullets(array(value, "evidence")), 13, false);
         }
         jobs(panel, true);
     }
@@ -167,50 +171,28 @@ final class ResumePortraitReportView extends LinearLayout {
         if (list.size() == 0) text(jobs, "暂无岗位适配数据", 13, false);
         for (JsonElement item : list) {
             JsonObject job = asObject(item);
-            text(jobs, str(job, "priority") + " · " + str(job, "position") + "    "
-                    + percent(num(job, "fit_score")), 15, true);
+            LinearLayout itemPanel = itemPanel(jobs);
+            text(itemPanel, str(job, "priority") + " · " + str(job, "position") + "    "
+                    + percent(num(job, "fit_score")), 15, true).setTextColor(BLUE);
             // 岗位适配度为 0–1，不能使用雷达图的 L1–L5 分数。
-            bar(jobs, (int) Math.round(num(job, "fit_score") * 100));
+            bar(itemPanel, (int) Math.round(num(job, "fit_score") * 100));
             if (details) {
-                text(jobs, "胜任依据\n" + bullets(array(job, "reasons")), 13, false);
-                text(jobs, "差距与风险\n" + bullets(array(job, "gaps")), 13, false);
+                text(itemPanel, "胜任依据", 13, true).setTextColor(0xFF69CB91);
+                text(itemPanel, bullets(array(job, "reasons")), 13, false);
+                TextView gapsTitle = text(itemPanel, "差距与风险", 13, true);
+                gapsTitle.setTextColor(0xFFF0B429);
+                gapsTitle.setPadding(0, dp(12), 0, dp(4));
+                text(itemPanel, bullets(array(job, "gaps")), 13, false);
             }
         }
     }
 
     private void fullReport(LinearLayout panel) {
         LinearLayout card = card(panel, "完整报告");
-        LinearLayout actions = new LinearLayout(getContext());
-        Button reading = button("阅读"), source = button("原文"), copy = button("复制报告");
-        actions.addView(reading, new LayoutParams(0, dp(36), 1));
-        actions.addView(source, new LayoutParams(0, dp(36), 1));
-        actions.addView(copy, new LayoutParams(0, dp(36), 1));
-        card.addView(actions);
         TextView report = text(card, "", 14, false);
         report.setTextIsSelectable(true);
         Markwon markwon = Markwon.builder(getContext()).usePlugin(TablePlugin.create(getContext()))
                 .usePlugin(StrikethroughPlugin.create()).build();
-        reading.setOnClickListener(v -> {
-            report.setTypeface(Typeface.DEFAULT);
-            markwon.setMarkdown(report, markdown);
-        });
-        source.setOnClickListener(v -> {
-            report.setTypeface(Typeface.MONOSPACE);
-            report.setText(markdown);
-        });
-        copy.setOnClickListener(v -> {
-            if (markdown.length() > 100000) {
-                Toast.makeText(getContext(), "报告过长，不能复制", Toast.LENGTH_SHORT).show();
-                return;
-            }
-            try {
-                ClipboardManager clipboard = (ClipboardManager) getContext().getSystemService(Context.CLIPBOARD_SERVICE);
-                clipboard.setPrimaryClip(ClipData.newPlainText("人才画像报告", markdown));
-                Toast.makeText(getContext(), "报告已复制，请注意保护个人信息", Toast.LENGTH_SHORT).show();
-            } catch (RuntimeException e) {
-                Toast.makeText(getContext(), "复制失败，请重试", Toast.LENGTH_SHORT).show();
-            }
-        });
         markwon.setMarkdown(report, markdown);
     }
 
@@ -358,6 +340,22 @@ final class ResumePortraitReportView extends LinearLayout {
         parent.addView(card, UiDecor.cardLp(getContext(), 8));
         return card;
     }
+    /** 每项能力或岗位独立成组，避免标题与相邻条目的描述混在一起。 */
+    private LinearLayout itemPanel(LinearLayout parent) {
+        LinearLayout panel = column();
+        android.graphics.drawable.GradientDrawable background = new android.graphics.drawable.GradientDrawable();
+        background.setColor(0xFF101E30);
+        background.setCornerRadius(dp(10));
+        background.setStroke(dp(1), 0xFF2C4464);
+        panel.setBackground(background);
+        panel.setPadding(dp(12), dp(8), dp(12), dp(12));
+        LayoutParams lp = new LayoutParams(-1, -2);
+        lp.topMargin = dp(10);
+        lp.bottomMargin = dp(4);
+        parent.addView(panel, lp);
+        return panel;
+    }
+
     private TextView text(LinearLayout parent, String value, int size, boolean bold) {
         TextView view = new TextView(getContext());
         view.setText(value);
