@@ -11,18 +11,34 @@ html,body{margin:0;width:100%;height:100%;background:#0A1E3C;color:#F4F7FB;font-
 button{border:1px solid transparent;border-radius:8px;padding:14px 24px;background:#1B6BDB;color:#F4F7FB;font-size:18px}
 button:disabled{opacity:.4}
 #skip{background:#122B4A;border-color:#4A6070;color:#9BB0C9}
-#status{max-width:80%;text-align:center;color:#9BB0C9}
+#status{max-width:80%;text-align:center;color:#9BB0C9;white-space:pre-line}
+#modal-container.active{position:fixed;inset:0;width:100%;height:100%}
 </style>
 </head>
 <body>
 <div id="setup"><div id="status">正在加载面试服务…</div><div class="actions"><button id="start" disabled>检测设备并开始面试</button><button id="skip" disabled>跳过检测（测试）</button></div></div>
+<div id="modal-container">
+  <pcm-mnms-modal
+    id="pcm-mnms-modal-video"
+    modal-title="数字人面试"
+    conversation-id=""
+    fullscreen="true"
+    digital-id="79597885440"
+    enable-virtual-human="true"
+    interview-mode="video"
+    show-end-interview-button="true"
+    default-query="请开始模拟面试"
+  ></pcm-mnms-modal>
+</div>
 <script>
 'use strict';
-let component = null, testStream = null, completed = false, starting = false;
+let component = document.getElementById('pcm-mnms-modal-video');
+let testStream = null, completed = false, starting = false, configured = false;
 let config = null;
 const status = document.getElementById('status');
 const start = document.getElementById('start');
 const skip = document.getElementById('skip');
+const container = document.getElementById('modal-container');
 function notify(type, id) { InterviewHost.event(type, id || ''); }
 function stopMedia() {
   if (testStream) { testStream.getTracks().forEach(t => t.stop()); testStream = null; }
@@ -32,45 +48,17 @@ function dispose() {
   const old = component;
   component = null;
   if (old) { old.isOpen = false; old.remove(); }
+  container.classList.remove('active');
 }
 window.initializeInterview = async function(value) {
   config = value;
   await customElements.whenDefined('pcm-mnms-modal');
-  status.textContent = '请确认摄像头和麦克风可用';
-  start.disabled = false;
-  skip.disabled = false;
-  notify('ready');
-};
-window.updateInterviewToken = function(token) {
-  if (component) component.token = token;
-  if (config) config.token = token;
-};
-async function beginInterview(skipCheck) {
-  if (starting || completed) return;
-  starting = true;
-  start.disabled = true;
-  skip.disabled = true;
-  try {
-    if (!skipCheck) {
-      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-        throw new Error('当前系统 WebView 不支持音视频，请更新后重试');
-      }
-      status.textContent = '正在检测摄像头和麦克风…';
-      testStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-      stopMedia();
-    }
-    // 跳过检测仅用于联调，不绕过 SDK 的系统授权或录制要求。
-    component = document.createElement('pcm-mnms-modal');
-    component.token = config.token;
-    component.fullscreen = true;
-    component.interviewMode = 'video';
-    component.digitalId = '79597885440';
-    component.enableVirtualHuman = true;
-    component.modalTitle = '数字人面试';
-    component.defaultQuery = '请开始模拟面试';
-    component.showEndInterviewButton = true;
-    component.customInputs = config.inputs;
-    component.addEventListener('conversationStart', e => notify('conversation', e.detail.conversation_id));
+  component.setAttribute('token', config.token);
+  if (!configured) {
+    component.addEventListener('conversationStart', e => {
+      component.setAttribute('conversation-id', e.detail.conversation_id);
+      notify('conversation', e.detail.conversation_id);
+    });
     component.addEventListener('streamComplete', e => notify('conversation', e.detail.conversation_id));
     component.addEventListener('tokenInvalid', () => notify('tokenInvalid'));
     component.addEventListener('interviewComplete', e => {
@@ -92,16 +80,74 @@ async function beginInterview(skipCheck) {
       dispose();
       notify('error');
     }));
-    document.body.appendChild(component);
+    configured = true;
+  }
+  status.textContent = '请确认摄像头和麦克风可用';
+  start.disabled = false;
+  skip.disabled = false;
+  notify('ready');
+};
+window.updateInterviewToken = function(token) {
+  if (component) component.setAttribute('token', token);
+  if (config) config.token = token;
+};
+function describeDeviceError(error) {
+  const name = error.name || 'UnknownError';
+  if (name === 'NotAllowedError' || name === 'PermissionDeniedError') return '未获得访问权限（' + name + '）';
+  if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return '未找到可用设备（' + name + '）';
+  if (name === 'NotReadableError' || name === 'TrackStartError') return '已允许访问，但设备无法启动，可能被系统服务占用（' + name + '）';
+  return '检测失败（' + name + '）';
+}
+async function checkDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    throw new Error('当前系统 WebView 不支持音视频采集，请更新系统 WebView');
+  }
+  const results = [], failures = [];
+  // 分别检测，避免将摄像头启动失败误报为麦克风问题，或反之。
+  for (const device of [
+    {name:'麦克风', constraints:{audio:true,video:false}},
+    {name:'摄像头', constraints:{audio:false,video:true}}
+  ]) {
+    status.textContent = results.concat('正在检测' + device.name + '…').join('\n');
+    try {
+      testStream = await navigator.mediaDevices.getUserMedia(device.constraints);
+      results.push(device.name + '：可用');
+    } catch (error) {
+      const message = device.name + '：' + describeDeviceError(error);
+      results.push(message);
+      failures.push(message);
+    } finally {
+      stopMedia();
+    }
+  }
+  if (failures.length) throw new Error(results.join('\n') + '\n可重试，或跳过检测进行测试');
+  // 单路可用不代表音视频能够同时开启，最后验证 SDK 所需的组合。
+  status.textContent = '正在检测音视频同时采集…';
+  try {
+    testStream = await navigator.mediaDevices.getUserMedia({audio:true,video:true});
+  } catch (error) {
+    throw new Error('麦克风、摄像头单独可用，但同时采集失败：' + describeDeviceError(error));
+  } finally {
+    stopMedia();
+  }
+}
+async function beginInterview(skipCheck) {
+  if (starting || completed) return;
+  starting = true;
+  start.disabled = true;
+  skip.disabled = true;
+  try {
+    if (!skipCheck) await checkDevices();
+    // 与官方示例一致，使用静态组件；参数在用户开始时设置，避免提前启动业务。
+    component.customInputs = config.inputs;
+    container.classList.add('active');
     document.getElementById('setup').style.display = 'none';
     component.isOpen = true;
   } catch (error) {
-    dispose();
+    stopMedia();
+    container.classList.remove('active');
     document.getElementById('setup').style.display = 'flex';
-    status.textContent = error.name === 'NotAllowedError' ? '未获得摄像头或麦克风权限，请授权后重试'
-      : error.name === 'NotReadableError' ? '摄像头或麦克风无法启动，可能被占用或设备暂不可用，可重试或跳过检测进行测试'
-      : error.name === 'NotFoundError' ? '未检测到可用的摄像头或麦克风'
-      : '设备检测失败，请检查设备权限及系统 WebView 版本';
+    status.textContent = error.message || describeDeviceError(error);
     start.disabled = false;
     skip.disabled = false;
     starting = false;
