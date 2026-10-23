@@ -61,6 +61,8 @@ jobs:
           AGENTS_RESUME_OPTIMIZATION_API_KEY: ${{ secrets.AGENTS_RESUME_OPTIMIZATION_API_KEY }}
           AGENTS_MOCK_INTERVIEW_API_KEY: ${{ secrets.AGENTS_MOCK_INTERVIEW_API_KEY }}
           AGENTS_RESUME_PORTRAIT_API_KEY: ${{ secrets.AGENTS_RESUME_PORTRAIT_API_KEY }}
+          AGENTS_SDK_SECRET_ID: ${{ secrets.AGENTS_SDK_SECRET_ID }}
+          AGENTS_SDK_SECRET_KEY: ${{ secrets.AGENTS_SDK_SECRET_KEY }}
         run: |
           python3 - <<'PY'
           import json
@@ -74,6 +76,8 @@ jobs:
               'agents.resume.optimization.api.key': os.environ.get('AGENTS_RESUME_OPTIMIZATION_API_KEY', ''),
               'agents.mock.interview.api.key': os.environ.get('AGENTS_MOCK_INTERVIEW_API_KEY', ''),
               'agents.resume.portrait.api.key': os.environ.get('AGENTS_RESUME_PORTRAIT_API_KEY', ''),
+              'agents.sdk.secret.id': os.environ.get('AGENTS_SDK_SECRET_ID', ''),
+              'agents.sdk.secret.key': os.environ.get('AGENTS_SDK_SECRET_KEY', ''),
           }
           # Properties.load 使用 ISO-8859-1，非 ASCII 字符需使用 Unicode 转义。
           def escape(value):

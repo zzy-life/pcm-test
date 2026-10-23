@@ -85,8 +85,8 @@ public class AgentStreamActivity extends AppCompatActivity {
     private Spinner agent, source, careerType;
     private EditText jd, resume, fileUrl, questionNumber;
     private String jobTitle = "";
-    private Spinner interviewRole, referenceAnswer;
-    private LinearLayout interviewSettings;
+    private Spinner interviewRole, referenceAnswer, interviewMode;
+    private LinearLayout interviewSettings, textInterviewSettings;
     private TextView status, fileInfo, heading;
     private Button begin, choose, cancel, useSample;
     private final ExecutorService preparationExecutor = Executors.newCachedThreadPool();
@@ -216,14 +216,18 @@ public class AgentStreamActivity extends AppCompatActivity {
         });
         interviewSettings = column();
         settings.addView(interviewSettings);
+        label(interviewSettings, "面试方式");
+        interviewMode = spinner(interviewSettings, "文本面试", "数字人面试");
         label(interviewSettings, "面试题数（默认 5）");
         questionNumber = editor(interviewSettings, "5–15 题，留空默认 5", 1);
         questionNumber.setInputType(android.text.InputType.TYPE_CLASS_NUMBER);
         questionNumber.setText("5");
-        label(interviewSettings, "面试类型");
-        interviewRole = spinner(interviewSettings, "HR综合面试", "专业面试");
-        label(interviewSettings, "参考答案");
-        referenceAnswer = spinner(interviewSettings, "不生成参考答案", "生成参考答案");
+        textInterviewSettings = column();
+        interviewSettings.addView(textInterviewSettings);
+        label(textInterviewSettings, "面试类型");
+        interviewRole = spinner(textInterviewSettings, "HR综合面试", "专业面试");
+        label(textInterviewSettings, "参考答案");
+        referenceAnswer = spinner(textInterviewSettings, "不生成参考答案", "生成参考答案");
         label(inputs, "简历来源");
         source = spinner(inputs, "手动填写简历", "上传本地简历文件", "在线简历文件链接");
         resume = editor(inputs, "简历正文", 5);
@@ -386,6 +390,8 @@ public class AgentStreamActivity extends AppCompatActivity {
                     if (p == lastAgent) return;
                     lastAgent = p;
                     updateAgent();
+                } else if (parent == interviewMode) {
+                    updateInterviewMode();
                 } else {
                     if (p == lastType) return;
                     lastType = p;
@@ -396,6 +402,12 @@ public class AgentStreamActivity extends AppCompatActivity {
         agent.setOnItemSelectedListener(listener);
         source.setOnItemSelectedListener(listener);
         careerType.setOnItemSelectedListener(listener);
+        interviewMode.setOnItemSelectedListener(listener);
+    }
+
+    private void updateInterviewMode() {
+        textInterviewSettings.setVisibility(interviewMode.getSelectedItemPosition() == 0
+                ? View.VISIBLE : View.GONE);
     }
 
     private void updateAgent() {
@@ -408,6 +420,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         boolean noJob = career || definition == AgentDefinition.PORTRAIT_AGENT;
         careerType.setVisibility(career ? View.VISIBLE : View.GONE);
         interviewSettings.setVisibility(interview ? View.VISIBLE : View.GONE);
+        updateInterviewMode();
         jd.setVisibility(noJob ? View.GONE : View.VISIBLE);
         jdVoice.setVisibility(noJob ? View.GONE : View.VISIBLE);
         jdClear.setVisibility(noJob ? View.GONE : View.VISIBLE);
@@ -480,6 +493,11 @@ public class AgentStreamActivity extends AppCompatActivity {
         String key = definition.apiKey();
         if (key == null || key.trim().isEmpty()) {
             status.setText("该功能尚未配置服务，请联系管理员后重试。");
+            return;
+        }
+        if (definition == AgentDefinition.INTERVIEW_AGENT && interviewMode.getSelectedItemPosition() == 1
+                && !com.hr.digitalhuman.agents.AgentSdkAuthClient.isConfigured()) {
+            status.setText("数字人面试尚未配置 SDK 服务，请联系管理员。");
             return;
         }
         final int mode = source.getSelectedItemPosition();
@@ -591,6 +609,10 @@ public class AgentStreamActivity extends AppCompatActivity {
             ResumePortraitActivity.start(this, body);
             return;
         }
+        if (definition == AgentDefinition.INTERVIEW_AGENT && interviewMode.getSelectedItemPosition() == 1) {
+            InterviewSdkActivity.start(this, body.getAsJsonObject("inputs"));
+            return;
+        }
         AgentResultActivity.start(this, key, definition.name, body.getAsJsonObject("inputs"),
                 body.get("query").getAsString(), "", body.get("response_mode").getAsString(), summary,
                 definition == AgentDefinition.INTERVIEW_AGENT, 10, 3000, 10000);
@@ -656,7 +678,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         if (begin == null) return;
         begin.setEnabled(!invalidParameters && !preparing);
         for (View view : new View[]{agent, source, careerType, jd, resume, fileUrl, choose,
-                questionNumber, interviewRole, referenceAnswer, useSample}) {
+                questionNumber, interviewRole, referenceAnswer, interviewMode, useSample}) {
             view.setEnabled(!preparing);
         }
         cancel.setVisibility(preparing ? View.VISIBLE : View.GONE);
@@ -730,6 +752,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         state.putString("question_number", questionNumber.getText().toString());
         state.putInt("interview_role", interviewRole.getSelectedItemPosition());
         state.putInt("reference_answer", referenceAnswer.getSelectedItemPosition());
+        state.putInt("interview_mode", interviewMode.getSelectedItemPosition());
         state.putString("jd", jd.getText().toString());
         state.putString("title", jobTitle);
         state.putString("resume", resume.getText().toString());
@@ -748,6 +771,7 @@ public class AgentStreamActivity extends AppCompatActivity {
         questionNumber.setText(state.getString("question_number", "5"));
         interviewRole.setSelection(state.getInt("interview_role", 0));
         referenceAnswer.setSelection(state.getInt("reference_answer", 0));
+        interviewMode.setSelection(state.getInt("interview_mode", 0));
         jd.setText(state.getString("jd", ""));
         jobTitle = state.getString("title", "");
         resume.setText(state.getString("resume", ""));

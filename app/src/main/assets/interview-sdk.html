@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>数字人面试</title>
+<style>
+html,body{margin:0;width:100%;height:100%;background:#f5f7fb;font-family:sans-serif}
+#setup{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
+button{border:0;border-radius:8px;padding:14px 32px;background:#2878ed;color:white;font-size:18px}
+#status{max-width:80%;text-align:center;color:#46536a}
+</style>
+</head>
+<body>
+<div id="setup"><div id="status">正在加载面试服务…</div><button id="start" disabled>检测设备并开始面试</button></div>
+<script>
+'use strict';
+let component = null, testStream = null, completed = false, starting = false;
+let config = null;
+const status = document.getElementById('status');
+const start = document.getElementById('start');
+function notify(type, id) { InterviewHost.event(type, id || ''); }
+function stopMedia() {
+  if (testStream) { testStream.getTracks().forEach(t => t.stop()); testStream = null; }
+}
+function dispose() {
+  stopMedia();
+  const old = component;
+  component = null;
+  if (old) { old.isOpen = false; old.remove(); }
+}
+window.initializeInterview = async function(value) {
+  config = value;
+  await customElements.whenDefined('pcm-mnms-modal');
+  status.textContent = '请确认摄像头和麦克风可用';
+  start.disabled = false;
+  notify('ready');
+};
+window.updateInterviewToken = function(token) {
+  if (component) component.token = token;
+  if (config) config.token = token;
+};
+start.onclick = async function() {
+  if (starting || completed) return;
+  starting = true;
+  start.disabled = true;
+  try {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      throw new Error('当前系统 WebView 不支持音视频，请更新后重试');
+    }
+    status.textContent = '正在检测摄像头和麦克风…';
+    testStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+    stopMedia();
+    // 仅在实际获取音视频成功后创建、打开组件，避免提前自动开始。
+    component = document.createElement('pcm-mnms-modal');
+    component.token = config.token;
+    component.fullscreen = true;
+    component.interviewMode = 'video';
+    component.digitalId = '79597885440';
+    component.enableVirtualHuman = true;
+    component.modalTitle = '数字人面试';
+    component.defaultQuery = '请开始模拟面试';
+    component.showEndInterviewButton = true;
+    component.customInputs = config.inputs;
+    component.addEventListener('conversationStart', e => notify('conversation', e.detail.conversation_id));
+    component.addEventListener('streamComplete', e => notify('conversation', e.detail.conversation_id));
+    component.addEventListener('tokenInvalid', () => notify('tokenInvalid'));
+    component.addEventListener('interviewComplete', e => {
+      if (completed) return;
+      completed = true;
+      const id = e.detail && e.detail.conversation_id;
+      dispose();
+      notify('complete', id);
+    });
+    component.addEventListener('modalClosed', () => {
+      if (completed) return;
+      completed = true;
+      dispose();
+      notify('closed');
+    });
+    ['recordingError','someErrorEvent'].forEach(type => component.addEventListener(type, () => {
+      if (completed) return;
+      completed = true;
+      dispose();
+      notify('error');
+    }));
+    document.body.appendChild(component);
+    document.getElementById('setup').style.display = 'none';
+    component.isOpen = true;
+  } catch (error) {
+    dispose();
+    document.getElementById('setup').style.display = 'flex';
+    status.textContent = error.name === 'NotAllowedError' ? '未获得摄像头或麦克风权限，请授权后重试'
+      : error.name === 'NotReadableError' ? '摄像头或麦克风被占用，请释放设备后重试'
+      : error.name === 'NotFoundError' ? '未检测到可用的摄像头或麦克风'
+      : '设备检测失败，请检查设备权限及系统 WebView 版本';
+    start.disabled = false;
+    starting = false;
+  }
+};
+window.addEventListener('pagehide', dispose);
+</script>
+<script type="module" src="https://pub.pincaimao.com/sdk/js/pcm-agents@latest/dist/pcm-agents/pcm-agents.esm.js" onerror="notify('loadError')"></script>
+</body>
+</html>

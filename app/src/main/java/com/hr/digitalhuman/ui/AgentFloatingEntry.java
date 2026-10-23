@@ -12,7 +12,7 @@ public final class AgentFloatingEntry implements Application.ActivityLifecycleCa
 
     private static boolean isAgentActivity(Activity activity) {
         return activity instanceof AgentStreamActivity || activity instanceof AgentResultActivity
-                || activity instanceof ResumePortraitActivity;
+                || activity instanceof ResumePortraitActivity || activity instanceof InterviewSdkActivity;
     }
 
     public boolean isAgentPageVisible() {

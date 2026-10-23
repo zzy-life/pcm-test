@@ -15,6 +15,9 @@ def diagnosisKey = localProps.getProperty('agents.resume.diagnosis.api.key', '')
 def optimizationKey = localProps.getProperty('agents.resume.optimization.api.key', '')
 def interviewKey = localProps.getProperty('agents.mock.interview.api.key', '')
 def portraitKey = localProps.getProperty('agents.resume.portrait.api.key', '')
+// 仅内部演示：AK/SK 与现有智能体 Key 一样会进入 APK。
+def sdkSecretId = localProps.getProperty('agents.sdk.secret.id', '')
+def sdkSecretKey = localProps.getProperty('agents.sdk.secret.key', '')
 
 android {
     // android-pdf-viewer 传递依赖 androidx.core:1.7.0 要求 compileSdk ≥ 31
@@ -33,6 +36,8 @@ android {
         buildConfigField "String", "AGENTS_RESUME_OPTIMIZATION_API_KEY", javaString(optimizationKey)
         buildConfigField "String", "AGENTS_MOCK_INTERVIEW_API_KEY", javaString(interviewKey)
         buildConfigField "String", "AGENTS_RESUME_PORTRAIT_API_KEY", javaString(portraitKey)
+        buildConfigField "String", "AGENTS_SDK_SECRET_ID", javaString(sdkSecretId)
+        buildConfigField "String", "AGENTS_SDK_SECRET_KEY", javaString(sdkSecretKey)
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         ndk {
             // 猎户星空机器人多为 arm；裁剪 abi 减小包体
