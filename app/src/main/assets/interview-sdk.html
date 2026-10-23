@@ -5,20 +5,24 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>数字人面试</title>
 <style>
-html,body{margin:0;width:100%;height:100%;background:#f5f7fb;font-family:sans-serif}
+html,body{margin:0;width:100%;height:100%;background:#0A1E3C;color:#F4F7FB;font-family:sans-serif}
 #setup{height:100%;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:16px}
-button{border:0;border-radius:8px;padding:14px 32px;background:#2878ed;color:white;font-size:18px}
-#status{max-width:80%;text-align:center;color:#46536a}
+.actions{display:flex;gap:12px}
+button{border:1px solid transparent;border-radius:8px;padding:14px 24px;background:#1B6BDB;color:#F4F7FB;font-size:18px}
+button:disabled{opacity:.4}
+#skip{background:#122B4A;border-color:#4A6070;color:#9BB0C9}
+#status{max-width:80%;text-align:center;color:#9BB0C9}
 </style>
 </head>
 <body>
-<div id="setup"><div id="status">正在加载面试服务…</div><button id="start" disabled>检测设备并开始面试</button></div>
+<div id="setup"><div id="status">正在加载面试服务…</div><div class="actions"><button id="start" disabled>检测设备并开始面试</button><button id="skip" disabled>跳过检测（测试）</button></div></div>
 <script>
 'use strict';
 let component = null, testStream = null, completed = false, starting = false;
 let config = null;
 const status = document.getElementById('status');
 const start = document.getElementById('start');
+const skip = document.getElementById('skip');
 function notify(type, id) { InterviewHost.event(type, id || ''); }
 function stopMedia() {
   if (testStream) { testStream.getTracks().forEach(t => t.stop()); testStream = null; }
@@ -34,24 +38,28 @@ window.initializeInterview = async function(value) {
   await customElements.whenDefined('pcm-mnms-modal');
   status.textContent = '请确认摄像头和麦克风可用';
   start.disabled = false;
+  skip.disabled = false;
   notify('ready');
 };
 window.updateInterviewToken = function(token) {
   if (component) component.token = token;
   if (config) config.token = token;
 };
-start.onclick = async function() {
+async function beginInterview(skipCheck) {
   if (starting || completed) return;
   starting = true;
   start.disabled = true;
+  skip.disabled = true;
   try {
-    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
-      throw new Error('当前系统 WebView 不支持音视频，请更新后重试');
+    if (!skipCheck) {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        throw new Error('当前系统 WebView 不支持音视频，请更新后重试');
+      }
+      status.textContent = '正在检测摄像头和麦克风…';
+      testStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
+      stopMedia();
     }
-    status.textContent = '正在检测摄像头和麦克风…';
-    testStream = await navigator.mediaDevices.getUserMedia({video:true,audio:true});
-    stopMedia();
-    // 仅在实际获取音视频成功后创建、打开组件，避免提前自动开始。
+    // 跳过检测仅用于联调，不绕过 SDK 的系统授权或录制要求。
     component = document.createElement('pcm-mnms-modal');
     component.token = config.token;
     component.fullscreen = true;
@@ -91,13 +99,16 @@ start.onclick = async function() {
     dispose();
     document.getElementById('setup').style.display = 'flex';
     status.textContent = error.name === 'NotAllowedError' ? '未获得摄像头或麦克风权限，请授权后重试'
-      : error.name === 'NotReadableError' ? '摄像头或麦克风被占用，请释放设备后重试'
+      : error.name === 'NotReadableError' ? '摄像头或麦克风无法启动，可能被占用或设备暂不可用，可重试或跳过检测进行测试'
       : error.name === 'NotFoundError' ? '未检测到可用的摄像头或麦克风'
       : '设备检测失败，请检查设备权限及系统 WebView 版本';
     start.disabled = false;
+    skip.disabled = false;
     starting = false;
   }
-};
+}
+start.onclick = () => beginInterview(false);
+skip.onclick = () => beginInterview(true);
 window.addEventListener('pagehide', dispose);
 </script>
 <script type="module" src="https://pub.pincaimao.com/sdk/js/pcm-agents@latest/dist/pcm-agents/pcm-agents.esm.js" onerror="notify('loadError')"></script>
