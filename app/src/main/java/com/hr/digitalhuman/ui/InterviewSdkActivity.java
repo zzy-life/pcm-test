@@ -4,6 +4,7 @@ import android.Manifest;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.graphics.Bitmap;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
@@ -85,7 +86,7 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         super.onCreate(state);
         // SDK 独占麦克风：仅关闭识别不能停止机器人持续拾音。
         com.hr.digitalhuman.robot.RobotSdkBridge bridge = DigitalHumanApp.getInstance().getRobotBridge();
-        if (bridge != null) bridge.pauseListeningFully();
+        if (bridge != null) bridge.acquireExternalMicrophone(this);
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
         root.setBackgroundResource(R.drawable.bg_page);
@@ -152,6 +153,9 @@ public final class InterviewSdkActivity extends AppCompatActivity {
             }
         });
         webView.setWebChromeClient(new WebChromeClient() {
+            @Override public Bitmap getDefaultVideoPoster() {
+                return Bitmap.createBitmap(1, 1, Bitmap.Config.ARGB_8888);
+            }
             @Override public void onPermissionRequest(PermissionRequest request) {
                 runOnUiThread(() -> requestMedia(request));
             }
@@ -415,6 +419,8 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         destroyed = true;
         handler.removeCallbacksAndMessages(null);
         destroyWebView();
+        com.hr.digitalhuman.robot.RobotSdkBridge bridge = DigitalHumanApp.getInstance().getRobotBridge();
+        if (bridge != null) bridge.releaseExternalMicrophone(this);
         if (authClient != null) new Thread(authClient::cancel, "sdk-auth-cancel").start();
         if (reportClient != null) new Thread(reportClient::cancel, "sdk-report-cancel").start();
         executor.shutdownNow();
