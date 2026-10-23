@@ -244,7 +244,6 @@ public class ResumePortraitActivity extends AppCompatActivity {
         final AgentApiClient active = client;
         final int token = ++generation;
         running = true;
-        status.setText("AI 正在解析简历并构建人才画像，请稍候");
         network.execute(() -> {
             try {
                 active.stream(request, new AgentApiClient.Listener() {
