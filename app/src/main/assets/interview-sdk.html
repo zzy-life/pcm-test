@@ -35,6 +35,129 @@ button:disabled{opacity:.4}
 let component = document.getElementById('pcm-mnms-modal-video');
 let testStream = null, completed = false, starting = false, configured = false;
 let config = null;
+// 在 SDK 模块加载前适配 getUserMedia；仅音频走原生 MIC，摄像头保留浏览器实现。
+const browserGetUserMedia = navigator.mediaDevices && navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+let nativeAudio = null, mediaQueue = Promise.resolve();
+function closeNativeAudio(session) {
+  if (!session || session.closed) return;
+  session.closed = true;
+  if (session.cancelStart) {
+    session.cancelStart(new Error('麦克风采集已停止'));
+    session.cancelStart = null;
+  }
+  clearInterval(session.timer);
+  session.tracks.forEach(track => track.stop());
+  session.destination.stream.getTracks().forEach(track => track.stop());
+  session.context.close().catch(() => {});
+  InterviewHost.stopMicrophone();
+  if (nativeAudio === session) nativeAudio = null;
+}
+async function nativeAudioTrack() {
+  let session = nativeAudio;
+  if (!session) {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) throw new Error('当前 WebView 不支持音频转换');
+    const context = new AudioContextClass();
+    session = {context, destination:context.createMediaStreamDestination(), tracks:new Set(), closed:false, nextTime:0};
+    nativeAudio = session;
+    try {
+      await new Promise((resolve, reject) => {
+        const timeout = setTimeout(() => reject(new Error('音频启动超时，请点击重试')), 5000);
+        session.cancelStart = reject;
+        context.resume().then(resolve, reject).finally(() => clearTimeout(timeout));
+      });
+      session.cancelStart = null;
+      if (context.state !== 'running') throw new Error('音频未启动，请点击重试');
+      if (completed) throw new Error('面试已结束');
+      const message = InterviewHost.startMicrophone();
+      if (message) throw new Error(message);
+      // 收到真实 PCM 才算设备启动成功，避免仅创建空音轨就通过检测。
+      await new Promise((resolve, reject) => {
+        let received = false, lastFrameAt = Date.now();
+        session.cancelStart = reject;
+        session.timer = setInterval(() => {
+          try {
+            if (session.closed || completed) throw new Error('麦克风采集已停止');
+            if (context.state !== 'running') throw new Error('音频处理已中断，请重新进入面试');
+            for (let i = 0; i < 8; i++) {
+              const encoded = InterviewHost.readMicrophone();
+              if (!encoded) break;
+              if (encoded[0] === '!') throw new Error(encoded.slice(1));
+              const bytes = atob(encoded);
+              const buffer = context.createBuffer(1, bytes.length / 2, 16000);
+              const samples = buffer.getChannelData(0);
+              for (let j = 0; j < samples.length; j++) {
+                const value = bytes.charCodeAt(j * 2) | (bytes.charCodeAt(j * 2 + 1) << 8);
+                samples[j] = (value >= 32768 ? value - 65536 : value) / 32768;
+              }
+              // 只连接录制音轨，不连接扬声器，避免本地回放啸叫。
+              const source = context.createBufferSource();
+              source.buffer = buffer;
+              source.connect(session.destination);
+              source.onended = () => source.disconnect();
+              session.nextTime = Math.max(session.nextTime, context.currentTime + 0.02);
+              source.start(session.nextTime);
+              session.nextTime += buffer.duration;
+              lastFrameAt = Date.now();
+              if (!received) { received = true; session.cancelStart = null; resolve(); }
+            }
+            if (Date.now() - lastFrameAt > 5000) throw new Error('未收到麦克风音频，请重试');
+          } catch (error) {
+            if (!received) {
+              closeNativeAudio(session);
+              reject(error);
+            } else {
+              // 录制期间只记录检测结果，不结束音轨或接管 SDK 的面试流程。
+              if (!session.audioWarningLogged) {
+                console.warn('麦克风音频异常', error);
+                session.audioWarningLogged = true;
+              }
+            }
+          }
+        }, 20);
+      });
+    } catch (error) {
+      closeNativeAudio(session);
+      throw error;
+    }
+  }
+  // SDK 每题会 stop()，按轨道计数释放；并发申请不能互相关闭麦克风。
+  function retain(track) {
+    const stop = track.stop.bind(track), clone = track.clone.bind(track);
+    session.tracks.add(track);
+    track.stop = () => {
+      if (!session.tracks.delete(track)) return;
+      stop();
+      if (!session.tracks.size) closeNativeAudio(session);
+    };
+    track.clone = () => retain(clone());
+    return track;
+  }
+  if (completed || session.closed) throw new Error('麦克风采集已停止');
+  return retain(session.destination.stream.getAudioTracks()[0].clone());
+}
+if (browserGetUserMedia) {
+  navigator.mediaDevices.getUserMedia = function(constraints) {
+    if (!constraints || !constraints.audio) return browserGetUserMedia(constraints);
+    const request = mediaQueue.then(async () => {
+      if (completed) throw new Error('面试已结束');
+      let videoStream = null, audioTrack = null;
+      try {
+        if (constraints.video) videoStream = await browserGetUserMedia({video:constraints.video, audio:false});
+        if (completed) throw new Error('面试已结束');
+        audioTrack = await nativeAudioTrack();
+        if (completed) throw new Error('面试已结束');
+        return new MediaStream([...(videoStream ? videoStream.getVideoTracks() : []), audioTrack]);
+      } catch (error) {
+        if (videoStream) videoStream.getTracks().forEach(track => track.stop());
+        if (audioTrack) audioTrack.stop();
+        throw error;
+      }
+    });
+    mediaQueue = request.catch(() => {});
+    return request;
+  };
+}
 const status = document.getElementById('status');
 const start = document.getElementById('start');
 const skip = document.getElementById('skip');
@@ -44,7 +167,9 @@ function stopMedia() {
   if (testStream) { testStream.getTracks().forEach(t => t.stop()); testStream = null; }
 }
 function dispose() {
+  completed = true;
   stopMedia();
+  closeNativeAudio(nativeAudio);
   const old = component;
   component = null;
   if (old) { old.isOpen = false; old.remove(); }
@@ -74,11 +199,9 @@ window.initializeInterview = async function(value) {
       dispose();
       notify('closed');
     });
-    ['recordingError','someErrorEvent'].forEach(type => component.addEventListener(type, () => {
-      if (completed) return;
-      completed = true;
-      dispose();
-      notify('error');
+    // SDK 自行处理录制和业务错误，宿主页不因此关闭面试或切换错误页。
+    ['recordingError','someErrorEvent'].forEach(type => component.addEventListener(type, e => {
+      console.warn('面试 SDK 事件：' + type, e.detail);
     }));
     configured = true;
   }
@@ -96,7 +219,7 @@ function describeDeviceError(error) {
   if (name === 'NotAllowedError' || name === 'PermissionDeniedError') return '未获得访问权限（' + name + '）';
   if (name === 'NotFoundError' || name === 'DevicesNotFoundError') return '未找到可用设备（' + name + '）';
   if (name === 'NotReadableError' || name === 'TrackStartError') return '已允许访问，但设备无法启动，可能被系统服务占用（' + name + '）';
-  return '检测失败（' + name + '）';
+  return error.message || '检测失败（' + name + '）';
 }
 async function checkDevices() {
   if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
