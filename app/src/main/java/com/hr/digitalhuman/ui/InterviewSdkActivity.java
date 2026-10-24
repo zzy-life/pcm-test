@@ -6,6 +6,11 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.media.AudioFormat;
+import android.media.AudioRecord;
+import android.media.MediaRecorder;
+import android.util.Base64;
+import android.util.Log;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -55,6 +60,62 @@ public final class InterviewSdkActivity extends AppCompatActivity {
     private FrameLayout content;
     private WebView webView;
     private PermissionRequest pendingPermission;
+    private static final int MICROPHONE_PERMISSION = 6202;
+    private final ExecutorService microphoneCleanup = Executors.newSingleThreadExecutor();
+    private volatile boolean microphoneAllowed;
+    private volatile MicrophoneCapture microphoneCapture;
+
+    /** 厂商麦克风阵列固定使用 MIC / 16kHz / 双声道 PCM16，左声道为有效语音。 */
+    private static final class MicrophoneCapture {
+        final AudioRecord recorder;
+        final java.util.concurrent.ArrayBlockingQueue<byte[]> frames =
+                new java.util.concurrent.ArrayBlockingQueue<>(8);
+        volatile boolean running = true;
+        volatile String error;
+        Thread thread;
+
+        MicrophoneCapture(AudioRecord recorder) { this.recorder = recorder; }
+
+        void readLoop() {
+            short[] stereo = new short[1280]; // 40ms，双声道交错排列。
+            boolean left = true;
+            try {
+                while (running) {
+                    int count = recorder.read(stereo, 0, stereo.length);
+                    if (count <= 0) {
+                        if (running) throw new IllegalStateException("AudioRecord.read=" + count);
+                        break;
+                    }
+                    byte[] mono = new byte[((count + (left ? 1 : 0)) / 2) * 2];
+                    int offset = 0;
+                    for (int i = 0; i < count; i++, left = !left) {
+                        if (!left) continue;
+                        mono[offset++] = (byte) stereo[i];
+                        mono[offset++] = (byte) (stereo[i] >> 8);
+                    }
+                    // 页面阻塞时丢弃最旧帧，不无限堆积录音和延迟。
+                    if (!frames.offer(mono)) { frames.poll(); frames.offer(mono); }
+                }
+            } catch (RuntimeException e) {
+                if (running) {
+                    error = "麦克风采集失败，请退出后重试";
+                    Log.e("InterviewMicrophone", "Capture failed", e);
+                }
+            } finally {
+                synchronized (this) {
+                    running = false;
+                    recorder.release();
+                }
+            }
+        }
+
+        synchronized void stop() {
+            if (!running) return;
+            running = false;
+            try { recorder.stop(); } catch (IllegalStateException ignored) { }
+            frames.clear();
+        }
+    }
     private AgentSdkAuthClient authClient;
     private AgentApiClient reportClient;
     private String conversationId = "", user;
@@ -115,11 +176,19 @@ public final class InterviewSdkActivity extends AppCompatActivity {
             showFailure("当前系统不支持 SDK 音视频面试，请使用文本面试");
             return;
         }
-        createWebView();
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                != PackageManager.PERMISSION_GRANTED) {
+            showMessage("请允许使用麦克风", false);
+            ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.RECORD_AUDIO}, MICROPHONE_PERMISSION);
+        } else {
+            microphoneAllowed = true;
+            createWebView();
+        }
     }
 
     @android.annotation.SuppressLint({"SetJavaScriptEnabled", "AddJavascriptInterface"})
     private void createWebView() {
+        content.removeAllViews();
         webView = new WebView(this);
         WebSettings settings = webView.getSettings();
         settings.setJavaScriptEnabled(true);
@@ -171,7 +240,60 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         handler.postDelayed(loadTimeout, 45000);
     }
 
+    private synchronized String startMicrophone() {
+        if (!microphoneAllowed) return "麦克风不可用或页面已退出";
+        if (microphoneCapture != null && !microphoneCapture.thread.isAlive()) microphoneCapture = null;
+        if (microphoneCapture != null) return "麦克风已在使用";
+        AudioRecord recorder = null;
+        try {
+            int minimum = AudioRecord.getMinBufferSize(16000,
+                    AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT);
+            if (minimum <= 0) return "设备不支持机器人麦克风采集参数";
+            recorder = new AudioRecord(MediaRecorder.AudioSource.MIC, 16000,
+                    AudioFormat.CHANNEL_IN_STEREO, AudioFormat.ENCODING_PCM_16BIT,
+                    Math.max(minimum * 2, 5120));
+            if (recorder.getState() != AudioRecord.STATE_INITIALIZED)
+                throw new IllegalStateException("AudioRecord initialization failed");
+            recorder.startRecording();
+            if (recorder.getRecordingState() != AudioRecord.RECORDSTATE_RECORDING)
+                throw new IllegalStateException("AudioRecord did not start");
+            MicrophoneCapture capture = new MicrophoneCapture(recorder);
+            capture.thread = new Thread(capture::readLoop, "interview-microphone");
+            microphoneCapture = capture;
+            capture.thread.start();
+            return "";
+        } catch (RuntimeException e) {
+            if (recorder != null) recorder.release();
+            microphoneCapture = null;
+            Log.e("InterviewMicrophone", "Cannot start MIC/16000/stereo", e);
+            return "机器人麦克风启动失败，请检查录音权限或设备占用";
+        }
+    }
+
+    private synchronized void stopMicrophone() {
+        MicrophoneCapture capture = microphoneCapture;
+        if (capture == null) return;
+        capture.stop();
+        // 确保上一轮已释放硬件，设备检测和逐题录制才能立即重新申请。
+        try { capture.thread.join(1000); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        if (!capture.thread.isAlive()) microphoneCapture = null;
+    }
+
     private final class SdkBridge {
+        @JavascriptInterface public String startMicrophone() {
+            return InterviewSdkActivity.this.startMicrophone();
+        }
+        @JavascriptInterface public String readMicrophone() {
+            MicrophoneCapture capture = microphoneCapture;
+            if (capture == null) return "";
+            if (capture.error != null) return "!" + capture.error;
+            byte[] frame = capture.frames.poll();
+            return frame == null ? "" : Base64.encodeToString(frame, Base64.NO_WRAP);
+        }
+        @JavascriptInterface public void stopMicrophone() {
+            InterviewSdkActivity.this.stopMicrophone();
+        }
         @JavascriptInterface public void event(String type, String id) {
             runOnUiThread(() -> {
                 if (destroyed || terminal || polling || webView == null) return;
@@ -274,6 +396,13 @@ public final class InterviewSdkActivity extends AppCompatActivity {
     @Override public void onRequestPermissionsResult(int code, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(code, permissions, results);
         if (code == MEDIA_PERMISSION) grantMedia();
+        if (code == MICROPHONE_PERMISSION && !destroyed && !terminal) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                    == PackageManager.PERMISSION_GRANTED) {
+                microphoneAllowed = true;
+                createWebView();
+            } else showFailure("请授予麦克风权限后重新进入面试");
+        }
     }
 
     private void beginReport() {
@@ -383,6 +512,8 @@ public final class InterviewSdkActivity extends AppCompatActivity {
     }
 
     private void destroyWebView() {
+        microphoneAllowed = false;
+        microphoneCleanup.execute(this::stopMicrophone);
         handler.removeCallbacks(loadTimeout);
         if (pendingPermission != null) { pendingPermission.deny(); pendingPermission = null; }
         if (webView == null) return;
@@ -420,7 +551,16 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         handler.removeCallbacksAndMessages(null);
         destroyWebView();
         com.hr.digitalhuman.robot.RobotSdkBridge bridge = DigitalHumanApp.getInstance().getRobotBridge();
-        if (bridge != null) bridge.releaseExternalMicrophone(this);
+        microphoneCleanup.execute(() -> {
+            MicrophoneCapture capture = microphoneCapture;
+            if (capture != null) {
+                try { capture.thread.join(); }
+                catch (InterruptedException e) { Thread.currentThread().interrupt(); return; }
+            }
+            // 真正释放录音硬件后才归还机器人拾音租约。
+            if (bridge != null) handler.post(() -> bridge.releaseExternalMicrophone(this));
+        });
+        microphoneCleanup.shutdown();
         if (authClient != null) new Thread(authClient::cancel, "sdk-auth-cancel").start();
         if (reportClient != null) new Thread(reportClient::cancel, "sdk-report-cancel").start();
         executor.shutdownNow();
