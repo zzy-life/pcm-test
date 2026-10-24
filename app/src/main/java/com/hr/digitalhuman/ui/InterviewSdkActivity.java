@@ -467,6 +467,17 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         text.setTextIsSelectable(true);
         scroll.addView(text);
         content.addView(scroll, new FrameLayout.LayoutParams(-1, -1));
+        Button back = UiDecor.button(this, "返回", true);
+        back.setPadding(dp(24), back.getPaddingTop(), dp(24), back.getPaddingBottom());
+        FrameLayout.LayoutParams backParams = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                android.view.Gravity.BOTTOM | android.view.Gravity.CENTER_HORIZONTAL);
+        backParams.bottomMargin = dp(20);
+        content.addView(back, backParams);
+        back.setOnClickListener(v -> finish());
+        // 按按钮实际高度留白，报告末尾可滚动到浮动按钮上方。
+        back.addOnLayoutChangeListener((v, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom) ->
+                scroll.setPadding(0, 0, 0, bottom - top + dp(36)));
         if (report.content != null && !report.content.trim().isEmpty()) {
             Markwon.builder(this).usePlugin(TablePlugin.create(this)).build().setMarkdown(text, report.content);
         } else {
