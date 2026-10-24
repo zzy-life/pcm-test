@@ -37,6 +37,7 @@ import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
 import com.hr.digitalhuman.R;
 import com.hr.digitalhuman.agents.AgentApiClient;
+import com.hr.digitalhuman.agents.AgentDefinition;
 import com.hr.digitalhuman.agents.AgentSdkAuthClient;
 import com.hr.digitalhuman.app.DigitalHumanApp;
 import com.hr.digitalhuman.model.UserInfo;
@@ -421,30 +422,13 @@ public final class InterviewSdkActivity extends AppCompatActivity {
             return;
         }
         handler.postDelayed(reportTimeout, remaining);
-        // SDK 会话的报告使用同一用户的 SDK Token，不使用文本面试智能体 API Key。
-        // 每次开始查询（含页面恢复、手动重试）重新取 Token，避免沿用长面试前的旧凭据。
-        reportClient = null;
-        AgentSdkAuthClient client = new AgentSdkAuthClient();
-        authClient = client;
-        executor.execute(() -> {
-            try {
-                AgentApiClient authorizedReportClient = new AgentApiClient(client.fetchToken(user));
-                runOnUiThread(() -> {
-                    if (destroyed || !polling || authClient != client) return;
-                    if (android.os.SystemClock.elapsedRealtime() >= reportDeadline) {
-                        reportTimeout.run();
-                        return;
-                    }
-                    reportClient = authorizedReportClient;
-                    fetchReport();
-                });
-            } catch (IOException | IllegalArgumentException e) {
-                runOnUiThread(() -> {
-                    if (!destroyed && polling && authClient == client)
-                        showFailure("报告授权失败，请检查网络和 SDK 配置后重试", true);
-                });
-            }
-        });
+        try {
+            reportClient = new AgentApiClient(AgentDefinition.INTERVIEW_AGENT.apiKey());
+        } catch (IllegalArgumentException e) {
+            showFailure("报告服务未配置，请联系管理员", true);
+            return;
+        }
+        fetchReport();
     }
 
     private void fetchReport() {
@@ -504,7 +488,11 @@ public final class InterviewSdkActivity extends AppCompatActivity {
         LinearLayout panel = showMessage(message, false);
         if (retryReport) {
             Button retry = UiDecor.button(this, "重新查询报告", true);
-            panel.addView(retry);
+            retry.setPadding(dp(24), retry.getPaddingTop(), dp(24), retry.getPaddingBottom());
+            LinearLayout.LayoutParams retryParams = new LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT);
+            retryParams.gravity = android.view.Gravity.CENTER_HORIZONTAL;
+            panel.addView(retry, retryParams);
             retry.setOnClickListener(v -> {
                 terminal = false;
                 reportDeadline = 0;
